@@ -319,6 +319,72 @@ func GetActivity(ctx context.Context, adminDID, activityID string) (*Activity, e
 	return &a, nil
 }
 
+// ListActivities returns all activities, optionally filtered by admin.
+// If adminDID is empty, returns activities across every admin.
+func ListActivities(ctx context.Context, adminDID string) ([]Activity, error) {
+	var rows pgx.Rows
+	var err error
+	if adminDID == "" {
+		rows, err = Pool.Query(ctx,
+			`SELECT admin_did, activity_id, reward_points,
+			        COALESCE(description,''), COALESCE(transaction_id,''), created_at
+			 FROM activities ORDER BY created_at ASC`)
+	} else {
+		rows, err = Pool.Query(ctx,
+			`SELECT admin_did, activity_id, reward_points,
+			        COALESCE(description,''), COALESCE(transaction_id,''), created_at
+			 FROM activities WHERE admin_did = $1 ORDER BY created_at ASC`, adminDID)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("ListActivities: %w", err)
+	}
+	defer rows.Close()
+	var out []Activity
+	for rows.Next() {
+		var a Activity
+		if err := rows.Scan(&a.AdminDID, &a.ActivityID, &a.RewardPoints,
+			&a.Description, &a.TransactionID, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("ListActivities scan: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// FTInfoEntry is one row in /users/{user_did}/payouts: total reward
+// points received from a single creator (admin) DID.
+type FTInfoEntry struct {
+	CreatorDID string
+	TotalCount int
+}
+
+// FTInfoForUser returns aggregate reward totals received by user_did,
+// grouped by the admin who sent them. Only counts successful reward
+// transfers.
+func FTInfoForUser(ctx context.Context, userDID string) ([]FTInfoEntry, error) {
+	rows, err := Pool.Query(ctx, `
+		SELECT admin_did, COALESCE(SUM(reward_points), 0)
+		FROM transfer_status
+		WHERE user_did = $1
+		  AND kind = $2
+		  AND status = $3
+		GROUP BY admin_did
+		ORDER BY admin_did
+	`, userDID, KindReward, StatusSuccess)
+	if err != nil {
+		return nil, fmt.Errorf("FTInfoForUser: %w", err)
+	}
+	defer rows.Close()
+	var out []FTInfoEntry
+	for rows.Next() {
+		var e FTInfoEntry
+		if err := rows.Scan(&e.CreatorDID, &e.TotalCount); err != nil {
+			return nil, fmt.Errorf("FTInfoForUser scan: %w", err)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
 
 // SumRewardPointsForActivities returns the sum of reward_points across the
 // given activity ids for an admin. Missing activities contribute 0.

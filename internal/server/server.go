@@ -71,6 +71,18 @@ func (s *Server) registerRoutes() {
 		// Admin provisioning
 		api.POST("/admins/setup", s.handleSetupAdmins)
 	}
+
+	// v1 client-contract aliases. Same handlers under different paths /
+	// response shapes to honor the original proxy.rubix.network API doc.
+	// Reuses v2 service-layer logic; only the request/response
+	// marshaling differs.
+	s.Engine.POST("/createdid", s.handleV1CreateDID)
+	s.Engine.POST("/admin/activity/add", s.handleV1AddActivity)
+	s.Engine.GET("/admin/activity/list", s.handleV1ActivityList)
+	s.Engine.POST("/admin/payouts", s.handleV1Payouts)
+	s.Engine.GET("/admin/payouts/status/:request_id", s.handleV1PayoutStatus)
+	s.Engine.POST("/admin/user/add", s.handleV1UserAdd)
+	s.Engine.GET("/users/:user_did/payouts", s.handleV1UserPayouts)
 }
 
 func (s *Server) handleHealth(c *gin.Context) {

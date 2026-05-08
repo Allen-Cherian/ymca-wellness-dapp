@@ -281,15 +281,19 @@ func GetAdminDIDByContract(ctx context.Context, hash string) (string, error) {
 // activities
 // ---------------------------------------------------------------------------
 
-// CreateActivity inserts a new activity record for an admin.
+// CreateActivity inserts a new activity record for an admin. On
+// conflict (re-adding an existing activity_id), reward_points,
+// description, and transaction_id are all updated.
 func CreateActivity(ctx context.Context, a *Activity) error {
 	a.CreatedAt = time.Now()
 	_, err := Pool.Exec(ctx, `
-		INSERT INTO activities (admin_did, activity_id, reward_points, description, created_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO activities (admin_did, activity_id, reward_points, description, transaction_id, created_at)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6)
 		ON CONFLICT (admin_did, activity_id)
-		DO UPDATE SET reward_points = EXCLUDED.reward_points, description = EXCLUDED.description
-	`, a.AdminDID, a.ActivityID, a.RewardPoints, a.Description, a.CreatedAt)
+		DO UPDATE SET reward_points  = EXCLUDED.reward_points,
+		              description    = EXCLUDED.description,
+		              transaction_id = EXCLUDED.transaction_id
+	`, a.AdminDID, a.ActivityID, a.RewardPoints, a.Description, a.TransactionID, a.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("CreateActivity: %w", err)
 	}
@@ -300,10 +304,11 @@ func CreateActivity(ctx context.Context, a *Activity) error {
 func GetActivity(ctx context.Context, adminDID, activityID string) (*Activity, error) {
 	var a Activity
 	err := Pool.QueryRow(ctx, `
-		SELECT admin_did, activity_id, reward_points, COALESCE(description,''), created_at
+		SELECT admin_did, activity_id, reward_points,
+		       COALESCE(description,''), COALESCE(transaction_id,''), created_at
 		FROM activities WHERE admin_did = $1 AND activity_id = $2
 	`, adminDID, activityID).Scan(
-		&a.AdminDID, &a.ActivityID, &a.RewardPoints, &a.Description, &a.CreatedAt,
+		&a.AdminDID, &a.ActivityID, &a.RewardPoints, &a.Description, &a.TransactionID, &a.CreatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
@@ -313,6 +318,7 @@ func GetActivity(ctx context.Context, adminDID, activityID string) (*Activity, e
 	}
 	return &a, nil
 }
+
 
 // SumRewardPointsForActivities returns the sum of reward_points across the
 // given activity ids for an admin. Missing activities contribute 0.

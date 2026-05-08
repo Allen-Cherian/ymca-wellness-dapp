@@ -54,11 +54,12 @@ type AdminContract struct {
 
 // Activity mirrors a row in activities.
 type Activity struct {
-	AdminDID     string
-	ActivityID   string
-	RewardPoints int
-	Description  string
-	CreatedAt    time.Time
+	AdminDID      string
+	ActivityID    string
+	RewardPoints  int
+	Description   string
+	TransactionID string
+	CreatedAt     time.Time
 }
 
 // Admin mirrors a row in admins. Admins are provisioned via

@@ -237,10 +237,11 @@ func (s *Service) AddActivity(ctx context.Context, adminDID, activityID string, 
 	}
 	// Mirror locally only after on-chain succeeds.
 	if err := database.CreateActivity(ctx, &database.Activity{
-		AdminDID:     adminDID,
-		ActivityID:   activityID,
-		RewardPoints: rewardPoints,
-		Description:  description,
+		AdminDID:      adminDID,
+		ActivityID:    activityID,
+		RewardPoints:  rewardPoints,
+		Description:   description,
+		TransactionID: sr.TransactionID,
 	}); err != nil {
 		return sr, contractHash, fmt.Errorf("persist activity: %w", err)
 	}

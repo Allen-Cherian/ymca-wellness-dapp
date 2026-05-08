@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------- Go
+# Test binaries / coverage
+bin/
+*.exe
+*.test
+*.out
+*.prof
+
+# Vendored deps (we use go modules)
+vendor/
+
+# ---------------------------------------------------------------- Rust contracts
+# Cargo build artifacts in each contract project.
+# Source (Cargo.toml + src/) and the deployable WASM in artifacts/ are committed.
+contracts/*/target/
+
+# ---------------------------------------------------------------- Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ---------------------------------------------------------------- Runtime state (per-machine)
+# Per-admin DID metadata files written by /api/admins/setup.
+# Contain admin passwords + DIDs — NEVER commit.
+dids/
+
+# Admin -> contract hash map written by deploy-contracts.sh.
+# Per-machine state, regenerated on each deploy.
+contracts.json
+
+# Deploy script logs.
+logs/
+
+# ---------------------------------------------------------------- IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ---------------------------------------------------------------- Misc
+dist/
+tmp/

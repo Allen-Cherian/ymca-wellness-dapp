@@ -19,7 +19,7 @@ func Connect(ctx context.Context, dsn string) error {
 	if err != nil {
 		return fmt.Errorf("database: parse dsn: %w", err)
 	}
-	cfg.MaxConns = 100
+	cfg.MaxConns = 30
 	cfg.MinConns = 5
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnIdleTime = 5 * time.Minute

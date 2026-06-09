@@ -17,17 +17,18 @@ Rubix v2 HTTP API (`rubixgoplatform`, `release-v1` branch).
 
 ## Table of contents
 
-1. [Architecture](#1-architecture)
-2. [Prerequisites](#2-prerequisites)
-3. [Setup](#3-setup)
-4. [Run it](#4-run-it)
-5. [Provision admins](#5-provision-admins)
-6. [Deploy contracts](#6-deploy-contracts)
-7. [Endpoint reference](#7-endpoint-reference)
-8. [Database schema](#8-database-schema)
-9. [Configuration](#9-configuration)
-10. [Troubleshooting](#10-troubleshooting)
-11. [Project layout](#11-project-layout)
+1.  [Architecture](#1-architecture)
+2.  [Prerequisites](#2-prerequisites)
+3.  [Setup](#3-setup)
+4.  [Run it](#4-run-it)
+5.  [Provision admins](#5-provision-admins)
+6.  [Deploy contracts](#6-deploy-contracts)
+7.  [Endpoint reference](#7-endpoint-reference)
+8.  [Database schema](#8-database-schema)
+9.  [Configuration](#9-configuration)
+10. [Authentication](#10-authentication)
+11. [Troubleshooting](#11-troubleshooting)
+12. [Project layout](#12-project-layout)
 
 ---
 
@@ -285,7 +286,11 @@ HTTP status mapping:
 
 | Method | Path | Sync? | Purpose |
 |---|---|---|---|
-| GET  | `/api/health` | sync | Liveness |
+| GET  | `/api/health` | sync | Liveness (no auth) |
+| POST | `/api/auth/login` | sync | Exchange email+password for an access+refresh pair (no auth) |
+| POST | `/api/auth/refresh` | sync | Rotate refresh; returns new pair (no auth) |
+| POST | `/api/auth/logout` | sync | Revoke a refresh token, or all for current user |
+| GET  | `/api/auth/me` | sync | Authenticated user profile |
 | POST | `/api/admins/setup` | sync (~1s/admin) | Provision N admin DIDs |
 | GET  | `/api/admins/:admin_did/users/count` | sync | Count of mapped users |
 | POST | `/api/rewards/transfer` | **async** | Queue reward transfer |
@@ -574,9 +579,142 @@ There is no `config.toml`.
 Admins (DID, password, node port) are **not** in env — they live in the
 `admins` table, populated by `/api/admins/setup`.
 
+| Variable | Default | Notes |
+|---|---|---|
+| `JWT_PRIVATE_KEY_PATH` | `./keys/jwt_private.pem` | RS256 private key (PEM). Required. |
+| `JWT_PUBLIC_KEY_PATH` | `./keys/jwt_public.pem` | RS256 public key (PEM). Required. |
+| `ACCESS_TOKEN_TTL` | `15m` | Access JWT lifetime (Go duration). |
+| `REFRESH_TOKEN_TTL` | `168h` | Refresh token lifetime (7 days). |
+| `BOOTSTRAP_EMAIL` | — | First-operator email; seeded on first boot only if `auth_users` is empty. |
+| `BOOTSTRAP_PASSWORD` | — | First-operator password (≥ 8 chars). |
+
 ---
 
-## 10. Troubleshooting
+## 10. Authentication
+
+All endpoints except `GET /api/health`, `POST /api/auth/login`, and
+`POST /api/auth/refresh` require a bearer token:
+
+```
+Authorization: Bearer <access_token>
+```
+
+### 10.1 Bootstrap (one-time)
+
+1. Generate the RS256 keypair:
+
+   ```bash
+   mkdir -p keys
+   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+     -out keys/jwt_private.pem
+   openssl rsa -in keys/jwt_private.pem -pubout -out keys/jwt_public.pem
+   chmod 600 keys/jwt_private.pem
+   ```
+
+2. Set bootstrap credentials in `.env` *before* starting the server for
+   the first time:
+
+   ```bash
+   BOOTSTRAP_EMAIL=ops@example.com
+   BOOTSTRAP_PASSWORD=change-me-now
+   ```
+
+3. Start the server. On first boot, with `auth_users` empty, the
+   bootstrap operator is created. The log line confirms it:
+
+   ```
+   bootstrap operator created: ops@example.com (id=...)
+   ```
+
+   Subsequent boots no-op (the table is no longer empty). You can
+   unset `BOOTSTRAP_*` after the first successful boot.
+
+### 10.2 Login
+
+```bash
+curl -X POST http://localhost:9000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ops@example.com","password":"change-me-now"}'
+```
+
+Response:
+
+```json
+{
+  "access_token":  "eyJhbGciOiJSUzI1NiIs...",
+  "refresh_token": "raw-base64url-...",
+  "expires_in":    900,
+  "token_type":    "Bearer"
+}
+```
+
+Store the refresh token securely — it's only returned once per issue.
+
+### 10.3 Calling protected endpoints
+
+```bash
+TOKEN=eyJhbGciOiJSUzI1NiIs...
+curl http://localhost:9000/api/queue/metrics \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### 10.4 Refresh
+
+When the access token expires (401), exchange the refresh token for a
+new pair:
+
+```bash
+curl -X POST http://localhost:9000/api/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"raw-base64url-..."}'
+```
+
+Refresh tokens rotate on every use: the old token is revoked and a new
+one is returned alongside the new access token. Presenting a
+previously-revoked refresh token triggers a theft response — every
+active refresh for that user is revoked and the request fails 401.
+
+### 10.5 Logout
+
+```bash
+# Revoke a single refresh token (no auth required if you have the token).
+curl -X POST http://localhost:9000/api/auth/logout \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"raw-base64url-..."}'
+
+# Revoke ALL active refresh tokens for the current user.
+curl -X POST http://localhost:9000/api/auth/logout \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"all":true}'
+```
+
+### 10.6 Who am I?
+
+```bash
+curl http://localhost:9000/api/auth/me -H "Authorization: Bearer $TOKEN"
+# {"status":true,"data":{"id":"...","email":"ops@example.com","role":"operator","created_at":"..."}}
+```
+
+### 10.7 Operational notes
+
+- **Single operator, multiple admin DIDs.** The current model has one
+  operator role that can act on behalf of any `admin_did`. Per-admin
+  scoping is intentionally deferred — see the TODO in
+  `internal/auth/middleware.go`.
+- **Key rotation.** Replace the PEM files and restart. All existing
+  access tokens become invalid immediately; refresh tokens become
+  unusable on their next refresh attempt.
+- **Adding more operators.** No public signup. Insert directly via SQL
+  with a bcrypt-hashed password, or build a follow-up admin endpoint.
+- **Resetting credentials.** `UPDATE auth_users SET password_hash = '...'
+  WHERE email = '...'` with a fresh bcrypt hash, then optionally
+  `DELETE FROM refresh_tokens WHERE user_id = ...` to force re-login.
+
+---
+
+## 11. Troubleshooting
 
 ### `warning: no admins configured` on startup
 Expected on first boot. Provision via [§5](#5-provision-admins).
@@ -618,13 +756,14 @@ to fail faster.
 
 ---
 
-## 11. Project layout
+## 12. Project layout
 
 ```
 cmd/server/                Entry point (main.go)
 internal/
+  auth/                    JWT (RS256), bcrypt, refresh-token rotation, Gin middleware
   config/                  .env loader; in-memory adminByDID map (DB-backed)
-  database/                pgxpool, models, queries
+  database/                pgxpool, models, queries (incl. auth_users / refresh_tokens)
   rubix/                   Rubix v2 HTTP client (DID, FT, contract, tx, sign)
   service/                 Business logic (orchestrates Rubix + DB)
   queue/                   Per-admin buffered channel + worker goroutine
@@ -633,6 +772,8 @@ migrations/
   001_init.sql             admin_contracts, activities, transfer_status, user_did_registry
   002_admins.sql           admins table (replaces config.toml admins)
   003_user_admins.sql      user_admins; drops user_did_registry; backfills from transfer_status
+  004_activities_tx_id.sql adds transaction_id column to activities
+  005_auth.sql             auth_users, refresh_tokens (bearer-token authentication)
 scripts/
   deploy-contracts.sh      generate + tx + sign for every (admin, kind)
 artifacts/                 Built WASM + lib.rs per kind (committed)

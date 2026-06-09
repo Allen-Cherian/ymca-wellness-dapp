@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -30,6 +31,14 @@ type EnvConfig struct {
 	FTName                 string
 	RubixHTTPTimeoutSecond int
 	QueueBufferSize        int
+
+	// Bearer-token auth
+	JWTPrivateKeyPath string
+	JWTPublicKeyPath  string
+	AccessTokenTTL    time.Duration
+	RefreshTokenTTL   time.Duration
+	BootstrapEmail    string
+	BootstrapPassword string
 }
 
 // AdminConfig describes one admin node the dApp server talks to. It is
@@ -75,6 +84,13 @@ func Load() (*AppConfig, error) {
 		FTName:                 getEnv("FT_NAME", "ytoken"),
 		RubixHTTPTimeoutSecond: getEnvInt("RUBIX_HTTP_TIMEOUT_SECONDS", 120),
 		QueueBufferSize:        getEnvInt("QUEUE_BUFFER_SIZE", 1000),
+
+		JWTPrivateKeyPath: getEnv("JWT_PRIVATE_KEY_PATH", "./keys/jwt_private.pem"),
+		JWTPublicKeyPath:  getEnv("JWT_PUBLIC_KEY_PATH", "./keys/jwt_public.pem"),
+		AccessTokenTTL:    getEnvDuration("ACCESS_TOKEN_TTL", 15*time.Minute),
+		RefreshTokenTTL:   getEnvDuration("REFRESH_TOKEN_TTL", 7*24*time.Hour),
+		BootstrapEmail:    getEnv("BOOTSTRAP_EMAIL", ""),
+		BootstrapPassword: getEnv("BOOTSTRAP_PASSWORD", ""),
 	}
 
 	return &AppConfig{
@@ -138,6 +154,15 @@ func getEnvInt(key string, def int) int {
 	if v := os.Getenv(key); v != "" {
 		if i, err := strconv.Atoi(v); err == nil {
 			return i
+		}
+	}
+	return def
+}
+
+func getEnvDuration(key string, def time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
 		}
 	}
 	return def

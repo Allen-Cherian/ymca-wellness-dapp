@@ -21,6 +21,9 @@ contracts/*/target/
 *.pem
 *.key
 
+# JWT signing keys (RS256). Generated per-machine; never commit.
+keys/
+
 # ---------------------------------------------------------------- Runtime state (per-machine)
 # Per-admin DID metadata files written by /api/admins/setup.
 # Contain admin passwords + DIDs — NEVER commit.

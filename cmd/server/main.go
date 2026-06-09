@@ -6,12 +6,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"ymca-wellness-dapp/internal/auth"
 	"ymca-wellness-dapp/internal/config"
 	"ymca-wellness-dapp/internal/database"
 	"ymca-wellness-dapp/internal/queue"
@@ -41,12 +43,21 @@ func main() {
 		log.Printf("warning: no admins configured; provision via POST /api/admins/setup")
 	}
 
+	keys, err := auth.LoadKeys(cfg.Env.JWTPrivateKeyPath, cfg.Env.JWTPublicKeyPath)
+	if err != nil {
+		log.Fatalf("auth.LoadKeys: %v", err)
+	}
+
+	if err := seedBootstrapOperator(ctx, cfg); err != nil {
+		log.Fatalf("bootstrap operator: %v", err)
+	}
+
 	svc := service.New(cfg)
 	// Worker job timeout = 2x HTTP timeout to allow for Sign() blocking.
 	procTimeout := time.Duration(cfg.Env.RubixHTTPTimeoutSecond*2) * time.Second
 	qm := queue.NewManager(svc, cfg.Env.QueueBufferSize, procTimeout)
 
-	srv := server.New(cfg, svc, qm)
+	srv := server.New(cfg, svc, qm, keys)
 
 	go func() {
 		log.Printf("ymca-wellness-dapp listening on :%s (admins=%d, queue_buf=%d)",
@@ -66,4 +77,36 @@ func main() {
 	defer drainCancel()
 	<-drainCtx.Done()
 	log.Println("shutdown: done")
+}
+
+// seedBootstrapOperator creates a single operator from BOOTSTRAP_EMAIL /
+// BOOTSTRAP_PASSWORD if the auth_users table is empty. Idempotent: a
+// non-empty table short-circuits without touching env vars. Missing env
+// on first boot is non-fatal but logs loudly — operators must set them
+// and restart before anyone can log in.
+func seedBootstrapOperator(ctx context.Context, cfg *config.AppConfig) error {
+	count, err := database.CountAuthUsers(ctx)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	if cfg.Env.BootstrapEmail == "" || cfg.Env.BootstrapPassword == "" {
+		log.Printf("warning: auth_users is empty and BOOTSTRAP_EMAIL/BOOTSTRAP_PASSWORD are unset; nobody can log in until you set them and restart")
+		return nil
+	}
+	hash, err := auth.HashPassword(cfg.Env.BootstrapPassword)
+	if err != nil {
+		if errors.Is(err, auth.ErrPasswordTooShort) {
+			return err
+		}
+		return err
+	}
+	u, err := database.CreateAuthUser(ctx, cfg.Env.BootstrapEmail, hash, database.RoleOperator)
+	if err != nil {
+		return err
+	}
+	log.Printf("bootstrap operator created: %s (id=%s)", u.Email, u.ID)
+	return nil
 }

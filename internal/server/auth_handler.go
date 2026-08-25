@@ -178,14 +178,15 @@ type CreateUserRequest struct {
 	Password string `json:"password"`
 }
 
-// handleCreateUser provisions an additional operator account. Sits behind
-// RequireAuth, so an existing operator is the trust boundary — the
-// env-seeded bootstrap user is the root of that chain.
+// handleCreateUser provisions an operator account. This route is OPEN
+// (see registerRoutes) so the client team can self-register the accounts
+// their cron jobs authenticate with, matching the Rubxy proxy's public
+// POST /register.
 //
-// Note: with a single role, any account created here has the same
-// privileges as its creator, including the ability to create further
-// accounts. Scoping is deferred alongside the per-admin work in
-// internal/auth/middleware.go.
+// Note: with a single role, every account created here holds the full API
+// surface. Scoping is deferred alongside the per-admin work in
+// internal/auth/middleware.go; until that lands, open registration is only
+// appropriate for a test deployment.
 func (s *Server) handleCreateUser(c *gin.Context) {
 	var req CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

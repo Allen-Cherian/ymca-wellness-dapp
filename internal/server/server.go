@@ -47,6 +47,18 @@ func (s *Server) registerRoutes() {
 	s.Engine.GET("/api/health", s.handleHealth)
 	s.Engine.POST("/api/auth/login", s.handleLogin)
 	s.Engine.POST("/api/auth/refresh", s.handleRefresh)
+	// Open registration, matching the Rubxy proxy's public POST /register.
+	// This is a CLIENT TEST DEPLOYMENT: the client team self-registers the
+	// accounts their cron jobs authenticate with, without an operator in the
+	// loop.
+	//
+	// WARNING: there is a single role (operator), so any self-registered
+	// account gets the full API surface — reward transfers against all admin
+	// DIDs, contract deploy/execute, and admin provisioning. Before this
+	// reaches production, either put this route back behind RequireAuth or
+	// introduce a lesser role for self-registered accounts and gate the
+	// privileged routes on the operator role.
+	s.Engine.POST("/api/auth/users", s.handleCreateUser)
 
 	// --- Protected routes ---
 	// Everything else (v2 /api/* and the v1 aliases) sits behind
@@ -58,7 +70,6 @@ func (s *Server) registerRoutes() {
 	// Authenticated auth endpoints
 	protected.POST("/api/auth/logout", s.handleLogout)
 	protected.GET("/api/auth/me", s.handleMe)
-	protected.POST("/api/auth/users", s.handleCreateUser)
 
 	api := protected.Group("/api")
 	{

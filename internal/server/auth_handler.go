@@ -7,6 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"ymca-wellness-dapp/internal/auth"
 	"ymca-wellness-dapp/internal/database"
@@ -169,4 +170,67 @@ func (s *Server) handleMe(c *gin.Context) {
 		"role":       user.Role,
 		"created_at": user.CreatedAt,
 	}})
+}
+
+// CreateUserRequest is the body of POST /api/auth/users.
+type CreateUserRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// handleCreateUser provisions an additional operator account. Sits behind
+// RequireAuth, so an existing operator is the trust boundary — the
+// env-seeded bootstrap user is the root of that chain.
+//
+// Note: with a single role, any account created here has the same
+// privileges as its creator, including the ability to create further
+// accounts. Scoping is deferred alongside the per-admin work in
+// internal/auth/middleware.go.
+func (s *Server) handleCreateUser(c *gin.Context) {
+	var req CreateUserRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, errResponse{Error: "Validation failed", Message: err.Error()})
+		return
+	}
+
+	email := strings.TrimSpace(req.Email)
+	if email == "" || !strings.Contains(email, "@") {
+		c.JSON(http.StatusBadRequest, errResponse{Error: "a valid email is required"})
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		if errors.Is(err, auth.ErrPasswordTooShort) {
+			c.JSON(http.StatusBadRequest, errResponse{Error: err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, errResponse{Error: "hash password", Message: err.Error()})
+		return
+	}
+
+	user, err := database.CreateAuthUser(c.Request.Context(), email, hash, database.RoleOperator)
+	if err != nil {
+		// email is CITEXT UNIQUE — a duplicate is a client error, not a 500.
+		if isUniqueViolation(err) {
+			c.JSON(http.StatusConflict, errResponse{Error: "email already registered"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, errResponse{Error: "create user", Message: err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, okResponse{Status: true, Data: gin.H{
+		"id":         user.ID,
+		"email":      user.Email,
+		"role":       user.Role,
+		"created_at": user.CreatedAt,
+	}})
+}
+
+// isUniqueViolation reports whether err is a Postgres 23505 unique
+// constraint violation, however deeply it is wrapped.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

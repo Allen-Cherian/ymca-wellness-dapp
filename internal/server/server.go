@@ -58,6 +58,7 @@ func (s *Server) registerRoutes() {
 	// Authenticated auth endpoints
 	protected.POST("/api/auth/logout", s.handleLogout)
 	protected.GET("/api/auth/me", s.handleMe)
+	protected.POST("/api/auth/users", s.handleCreateUser)
 
 	api := protected.Group("/api")
 	{

@@ -182,7 +182,7 @@ rubix_deploy_tx() {
         rbt: 0,
         smartContract: [{
           smartContractId: $token,
-          value: 1,
+          value: 0.001,
           data:  "deploy"
         }]
       },

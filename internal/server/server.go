@@ -46,6 +46,12 @@ func (s *Server) registerRoutes() {
 	// --- Open routes (no token required) ---
 	s.Engine.GET("/api/health", s.handleHealth)
 	s.Engine.POST("/api/auth/login", s.handleLogin)
+	// /api/auth/token is an alias for /api/auth/login. There is no session
+	// to establish — the handler mints a fresh token pair per call and an
+	// earlier access token stays valid — so the Rubxy-style "get a token"
+	// name describes what actually happens. Both paths are supported;
+	// neither is deprecated.
+	s.Engine.POST("/api/auth/token", s.handleLogin)
 	s.Engine.POST("/api/auth/refresh", s.handleRefresh)
 	// Open registration, matching the Rubxy proxy's public POST /register.
 	// This is a CLIENT TEST DEPLOYMENT: the client team self-registers the

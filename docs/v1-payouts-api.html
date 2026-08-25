@@ -1,0 +1,490 @@
+<title>Wellness Café Payouts API</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+:root{
+  --ground:#FCFCFD;
+  --surface:#FFFFFF;
+  --surface-sunk:#F4F6F9;
+  --ink:#16181D;
+  --ink-soft:#4A5260;
+  --ink-faint:#767F8E;
+  --line:#DFE4EB;
+  --line-soft:#EDF0F4;
+  --accent:#1F5C8F;
+  --accent-soft:#E7EFF6;
+  --get:#2A6F5A;
+  --get-bg:#E6F1EC;
+  --post:#8A5A1F;
+  --post-bg:#F7EEE2;
+  --warn:#9A6B00;
+  --warn-bg:#FBF3E0;
+  --warn-line:#E8D19B;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#101317;
+    --surface:#171B21;
+    --surface-sunk:#1D222A;
+    --ink:#E9EDF3;
+    --ink-soft:#A7B1C0;
+    --ink-faint:#78828F;
+    --line:#2A313B;
+    --line-soft:#222831;
+    --accent:#6FAEDC;
+    --accent-soft:#1B2A38;
+    --get:#6DBFA0;
+    --get-bg:#16271F;
+    --post:#D3A05C;
+    --post-bg:#2A2117;
+    --warn:#D9AE5B;
+    --warn-bg:#272014;
+    --warn-line:#4A3C1D;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#101317;
+  --surface:#171B21;
+  --surface-sunk:#1D222A;
+  --ink:#E9EDF3;
+  --ink-soft:#A7B1C0;
+  --ink-faint:#78828F;
+  --line:#2A313B;
+  --line-soft:#222831;
+  --accent:#6FAEDC;
+  --accent-soft:#1B2A38;
+  --get:#6DBFA0;
+  --get-bg:#16271F;
+  --post:#D3A05C;
+  --post-bg:#2A2117;
+  --warn:#D9AE5B;
+  --warn-bg:#272014;
+  --warn-line:#4A3C1D;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:820px;margin:0 auto;padding:0 24px 96px}
+
+.masthead{border-bottom:1px solid var(--line);padding:56px 0 32px;margin-bottom:8px}
+.eyebrow{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 14px;font-weight:500;
+}
+h1{
+  font-size:clamp(30px,4.6vw,42px);line-height:1.12;font-weight:700;
+  letter-spacing:-.022em;margin:0 0 14px;text-wrap:balance;
+}
+.standfirst{font-size:17px;color:var(--ink-soft);margin:0;max-width:62ch}
+.hostbar{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin-top:22px}
+.hostbar code{
+  font-family:"IBM Plex Mono",monospace;font-size:13.5px;
+  background:var(--accent-soft);color:var(--accent);
+  padding:5px 10px;border-radius:4px;font-weight:500;
+}
+.hostbar .meta{font-size:12.5px;color:var(--ink-faint);font-family:"IBM Plex Mono",monospace}
+
+nav{
+  position:sticky;top:0;z-index:20;
+  background:color-mix(in srgb,var(--ground) 92%,transparent);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line-soft);margin-bottom:44px;
+}
+nav ul{list-style:none;margin:0 auto;padding:11px 24px;max-width:820px;display:flex;gap:20px;flex-wrap:wrap}
+nav a{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.05em;
+  color:var(--ink-faint);text-decoration:none;text-transform:uppercase;
+}
+nav a:hover{color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:2px}
+
+section{margin-bottom:56px;scroll-margin-top:64px}
+h2{
+  font-size:24px;font-weight:600;letter-spacing:-.015em;margin:0 0 6px;
+  padding-bottom:10px;border-bottom:1px solid var(--line);text-wrap:balance;
+}
+h2 .num{font-family:"IBM Plex Mono",monospace;font-size:14px;color:var(--accent);margin-right:10px;font-weight:500}
+.lede{color:var(--ink-soft);margin:14px 0 24px;max-width:66ch}
+h3{font-size:16.5px;font-weight:600;margin:32px 0 10px;letter-spacing:-.005em}
+h3:first-of-type{margin-top:0}
+p{margin:0 0 14px;max-width:68ch}
+
+pre{
+  background:var(--surface-sunk);border:1px solid var(--line-soft);
+  border-radius:6px;padding:14px 16px;overflow-x:auto;margin:0 0 16px;
+}
+pre code{font-family:"IBM Plex Mono",monospace;font-size:13px;line-height:1.65;color:var(--ink);white-space:pre}
+p code,li code,td code{
+  font-family:"IBM Plex Mono",monospace;font-size:.88em;
+  background:var(--surface-sunk);border:1px solid var(--line-soft);
+  padding:1.5px 5px;border-radius:3px;overflow-wrap:break-word;
+}
+
+.ep{border:1px solid var(--line);border-radius:7px;background:var(--surface);margin-bottom:18px;overflow:hidden}
+.ep-head{
+  display:flex;gap:11px;align-items:center;flex-wrap:wrap;
+  padding:12px 16px;background:var(--surface-sunk);border-bottom:1px solid var(--line-soft);
+}
+.chip{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;
+  letter-spacing:.08em;padding:3px 7px;border-radius:3px;flex-shrink:0;
+}
+.chip.get{background:var(--get-bg);color:var(--get)}
+.chip.post{background:var(--post-bg);color:var(--post)}
+.ep-path{font-family:"IBM Plex Mono",monospace;font-size:13.5px;font-weight:500;overflow-wrap:anywhere}
+.ep-tag{
+  margin-left:auto;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  letter-spacing:.06em;color:var(--ink-faint);border:1px solid var(--line);
+  padding:2px 7px;border-radius:3px;flex-shrink:0;
+}
+.ep-body{padding:16px}
+.ep-body > *:last-child{margin-bottom:0}
+.ep-note{font-size:14px;color:var(--ink-soft);margin:0 0 14px}
+
+ol.flow{list-style:none;counter-reset:s;margin:0;padding:0;display:flex;flex-direction:column;gap:20px}
+ol.flow > li{counter-increment:s;position:relative;padding-left:42px}
+ol.flow > li::before{
+  content:counter(s);position:absolute;left:0;top:1px;width:26px;height:26px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
+  color:var(--accent);background:var(--accent-soft);border-radius:50%;
+}
+ol.flow h3{margin:0 0 6px;font-size:15.5px}
+ol.flow p{margin:0;font-size:14.5px;color:var(--ink-soft)}
+ol.flow code{font-size:.85em}
+
+.tw{overflow-x:auto;margin-bottom:18px;border:1px solid var(--line);border-radius:7px}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:520px}
+th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{
+  background:var(--surface-sunk);font-family:"IBM Plex Mono",monospace;
+  font-size:11px;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink-faint);font-weight:600;
+}
+tbody tr:last-child td{border-bottom:none}
+td.mono{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-variant-numeric:tabular-nums}
+
+.callout{border:1px solid var(--warn-line);background:var(--warn-bg);border-radius:7px;padding:16px 18px;margin:0 0 20px}
+.callout h4{
+  margin:0 0 8px;font-size:14px;font-weight:600;color:var(--warn);
+  font-family:"IBM Plex Mono",monospace;letter-spacing:.03em;
+}
+.callout p{margin:0 0 10px;font-size:14.5px;color:var(--ink-soft)}
+.callout p:last-child{margin-bottom:0}
+
+ul.plain{margin:0 0 16px;padding-left:20px}
+ul.plain li{margin-bottom:7px;color:var(--ink-soft);max-width:66ch}
+ul.plain li strong{color:var(--ink);font-weight:600}
+
+footer{
+  border-top:1px solid var(--line);padding-top:20px;margin-top:8px;
+  font-size:13px;color:var(--ink-faint);font-family:"IBM Plex Mono",monospace;
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:560px){.wrap{padding:0 18px 72px}nav ul{padding:10px 18px;gap:14px}}
+</style>
+
+<div class="wrap">
+<header class="masthead">
+  <p class="eyebrow">Client Integration Guide</p>
+  <h1>Wellness Café Payouts API</h1>
+  <p class="standfirst">Seven endpoints for creating user DIDs, registering activities, and paying out rewards on the Rubix chain. Paths and payloads match the original proxy contract — swap the base URL and add a bearer token.</p>
+  <div class="hostbar">
+    <code>https://yqa.rubix.network</code>
+    <span class="meta">10 admin DIDs · FT ytoken · verified 25 Aug 2026</span>
+  </div>
+</header>
+
+<nav>
+  <ul>
+    <li><a href="#auth">Auth</a></li>
+    <li><a href="#flow">Flow</a></li>
+    <li><a href="#users">Users</a></li>
+    <li><a href="#activities">Activities</a></li>
+    <li><a href="#payouts">Payouts</a></li>
+    <li><a href="#admins">Admins</a></li>
+    <li><a href="#errors">Errors</a></li>
+    <li><a href="#cron">Cron</a></li>
+  </ul>
+</nav>
+
+<section id="auth">
+  <h2><span class="num">01</span>Getting a token</h2>
+  <p class="lede">All seven endpoints require <code>Authorization: Bearer &lt;access_token&gt;</code>. This is the one addition to the original contract — everything else matches.</p>
+
+  <h3>Once, per account</h3>
+  <p>Registration is open. Password must be at least 8 characters. You only do this again if you want a second account.</p>
+<pre><code>curl -X POST https://yqa.rubix.network/api/auth/users \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"your-password"}'</code></pre>
+
+  <h3>Every run — generate a token</h3>
+  <p>Post credentials, get a token valid for 15 minutes. No session is established: call it whenever you need one, and earlier tokens stay valid until they expire.</p>
+<pre><code>TOKEN=$(curl -sS -X POST https://yqa.rubix.network/api/auth/token \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"your-password"}' \
+  | jq -r '.access_token')</code></pre>
+  <p class="ep-note">The response is flat — read <code>.access_token</code>, not <code>.data.access_token</code>. <code>/api/auth/login</code> is an alias for the same endpoint.</p>
+
+  <h3>Every request — send the token</h3>
+<pre><code>curl "https://yqa.rubix.network/admin/activity/list" \
+  -H "Authorization: Bearer $TOKEN"</code></pre>
+
+  <div class="callout">
+    <h4>One account per job</h4>
+    <p>The login response also carries a <code>refresh_token</code>, which you only need for a job running longer than 15 minutes. Refresh tokens rotate: presenting a spent one returns <code>401</code> <em>and revokes every active refresh token for that account</em>.</p>
+    <p>Two jobs sharing an account will knock each other out. Give each its own — or skip refresh entirely and generate a fresh token per run.</p>
+  </div>
+</section>
+
+<section id="flow">
+  <h2><span class="num">02</span>The reward flow</h2>
+  <p class="lede">Four calls, in this order. Steps 1 and 2 are setup and only repeat when you onboard a new user or add a new activity type.</p>
+
+  <ol class="flow">
+    <li>
+      <h3>Create the user's DID</h3>
+      <p><code>POST /createdid</code> — mints a DID from the user's public key on an admin's node, and records which admin owns them.</p>
+    </li>
+    <li>
+      <h3>Register the activity</h3>
+      <p><code>POST /admin/activity/add</code> — binds an activity ID to a point value for that admin.</p>
+    </li>
+    <li>
+      <h3>Queue the payout</h3>
+      <p><code>POST /admin/payouts</code> — returns <code>202</code> and a <code>request_id</code>. Points are summed across the activity IDs you name.</p>
+    </li>
+    <li>
+      <h3>Poll until it settles</h3>
+      <p><code>GET /admin/payouts/status/:request_id</code> — until <code>status</code> is <code>success</code> or <code>failed</code>.</p>
+    </li>
+  </ol>
+
+  <p style="margin-top:26px">Create the DID through <code>/createdid</code> before paying anyone. A payout to a DID that was never created through that endpoint still succeeds, but the user has no admin mapping, so <code>GET /users/:user_did/payouts</code> and the user-to-admin lookups will not find them.</p>
+</section>
+
+<section id="users">
+  <h2><span class="num">03</span>Users</h2>
+
+  <div class="ep">
+    <div class="ep-head"><span class="chip post">POST</span><span class="ep-path">/createdid</span><span class="ep-tag">sync</span></div>
+    <div class="ep-body">
+      <p class="ep-note">Creates a user DID on the admin's Rubix node from an uncompressed secp256k1 public key — <code>04</code> followed by 128 hex characters. Also records the user&rarr;admin mapping.</p>
+<pre><code>{"admin_did":"bafybmicvcv...w3uu",
+ "public_key":"046dfd30bc498a825f...12d526fc"}
+
+200 {"did":"bafybmiap7cpgjs3s3hr4qfje37itwb6t5cmik7xjnbbtdys5wcdx3tzudm"}</code></pre>
+      <p class="ep-note" style="margin-bottom:0">The node validates the key is on-curve. A malformed or wrong-length key returns <code>502</code>. Note the response here is a bare object, not the <code>{status, message, result}</code> envelope.</p>
+    </div>
+  </div>
+
+  <div class="ep">
+    <div class="ep-head"><span class="chip get">GET</span><span class="ep-path">/users/:user_did/payouts</span><span class="ep-tag">sync</span></div>
+    <div class="ep-body">
+      <p class="ep-note">Returns the user's fungible-token holdings, aggregated by creator admin.</p>
+<pre><code>200 {"status":true,
+     "message":"Got FT info successfully",
+     "ft_info":[{"creator_did":"bafybmicvcv...w3uu",
+                 "ft_name":"ytoken","ft_count":15}],
+     "result":null}</code></pre>
+      <p class="ep-note" style="margin-bottom:0">Read <code>ft_info</code>, not <code>result</code> — <code>result</code> is always <code>null</code> on this endpoint. A user with no mapped admin returns an empty <code>ft_info</code>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="activities">
+  <h2><span class="num">04</span>Activities</h2>
+
+  <div class="ep">
+    <div class="ep-head"><span class="chip post">POST</span><span class="ep-path">/admin/activity/add</span><span class="ep-tag">sync · on-chain</span></div>
+    <div class="ep-body">
+      <p class="ep-note">Writes to the admin's activity contract chain and stores the activity. Takes 1–3 seconds.</p>
+<pre><code>{"admin_did":"bafybmicvcv...w3uu",
+ "activity_id":"cycle-5k",
+ "reward_points":15,
+ "description":"5km cycle"}
+
+200 {"status":true,
+     "message":"Activity added successfully",
+     "result":[{"BlockId":"241ee2ced0fc5aee...","BlockNo":null,
+                "Epoch":null,
+                "SmartContractData":"{\"activity_id\":\"cycle-5k\",\"reward_points\":15}"}]}</code></pre>
+      <p class="ep-note" style="margin-bottom:0"><code>activity_id</code> is yours to choose and is unique per admin. Re-posting the same ID <strong>updates</strong> the activity rather than creating a second one, so points cannot double-count — though each call does append a chain entry, keeping the history auditable.</p>
+    </div>
+  </div>
+
+  <div class="ep">
+    <div class="ep-head"><span class="chip get">GET</span><span class="ep-path">/admin/activity/list</span><span class="ep-tag">sync</span></div>
+    <div class="ep-body">
+      <p class="ep-note">Optional <code>?admin_did=</code> filter. Returns a <strong>bare array</strong> — no envelope, unlike the other endpoints here.</p>
+<pre><code>GET /admin/activity/list?admin_did=bafybmicvcv...w3uu
+
+200 [{"activity_id":"yoga-001","reward_points":10,
+      "block_hash":"36e40f144977e464..."},
+     {"activity_id":"swim-100","reward_points":25,
+      "block_hash":"5053075f78986500..."},
+     {"activity_id":"cycle-5k","reward_points":15,
+      "block_hash":"241ee2ced0fc5aee..."}]</code></pre>
+      <p class="ep-note" style="margin-bottom:0"><code>block_hash</code> is the transaction that recorded the activity on-chain. Activities created before this field existed return <code>""</code>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="payouts">
+  <h2><span class="num">05</span>Payouts</h2>
+  <p class="lede">The only asynchronous pair. Payouts queue per admin DID — serialized within one admin, parallel across the ten.</p>
+
+  <div class="ep">
+    <div class="ep-head"><span class="chip post">POST</span><span class="ep-path">/admin/payouts</span><span class="ep-tag">async · 202</span></div>
+    <div class="ep-body">
+      <p class="ep-note"><code>activity_id</code> is an <strong>array</strong>. Points are summed across the activities listed.</p>
+<pre><code>{"user_did":"bafybmiap7c...zudm",
+ "admin_did":"bafybmicvcv...w3uu",
+ "activity_id":["cycle-5k"]}
+
+202 {"status":true,
+     "message":"Transfer request queued for processing",
+     "result":{"request_id":"8eb60a34-4678-4f5b-a033-0d746afa61b2"}}</code></pre>
+    </div>
+  </div>
+
+  <div class="ep">
+    <div class="ep-head"><span class="chip get">GET</span><span class="ep-path">/admin/payouts/status/:request_id</span><span class="ep-tag">poll</span></div>
+    <div class="ep-body">
+<pre><code>200 {"status":true,
+     "message":"transferred 15 ytoken to bafybmiap7c...zudm",
+     "result":{
+       "request_id":"8eb60a34-...","status":"success",
+       "reward_points":15,"activity_ids":["cycle-5k"],
+       "user_did":"bafybmiap7c...zudm","admin_did":"bafybmicvcv...w3uu",
+       "block_id":"1e24967b21f7a00c...",
+       "blockchain_tx_id":"1e24967b21f7a00c...",
+       "ft_transfer_txid":"1e24967b21f7a00c...",
+       "contract_hash":"QmdtEWSHnUug1...",
+       "started_at":"2026-08-25T08:26:09Z",
+       "completed_at":"2026-08-25T08:26:10Z",
+       "queued_at":"","error_details":""}}</code></pre>
+      <ul class="plain">
+        <li><strong>queued</strong> — accepted, waiting on the admin's worker</li>
+        <li><strong>processing</strong> — signing in progress on the chain</li>
+        <li><strong>success</strong> — settled; the transaction id fields are populated</li>
+        <li><strong>failed</strong> — see <code>error_details</code></li>
+      </ul>
+      <p class="ep-note" style="margin-bottom:0"><code>block_id</code>, <code>blockchain_tx_id</code>, and <code>ft_transfer_txid</code> all carry the <strong>same</strong> transaction id — the unified transaction covers what were previously separate legs. <code>queued_at</code> is always <code>""</code>; use <code>started_at</code>. A payout settled in about one second in testing; poll every 2–3 s.</p>
+    </div>
+  </div>
+</section>
+
+<section id="admins">
+  <h2><span class="num">06</span>Admins</h2>
+
+  <div class="ep">
+    <div class="ep-head"><span class="chip post">POST</span><span class="ep-path">/admin/user/add</span><span class="ep-tag">sync · on-chain</span></div>
+    <div class="ep-body">
+      <p class="ep-note">Appends an admin DID to an existing admin's chain. This is an <strong>on-chain record only</strong> — it does not make the new DID usable for payouts. Ten admins are already provisioned; you should not normally need this.</p>
+<pre><code>{"new_admin_did":"bafybmie4zt...qi5i",
+ "existing_admin_did":"bafybmicvcv...w3uu"}
+
+200 {"status":true,
+     "message":"Fetched latest block smart contract data",
+     "result":[{"BlockId":"34b7e25a6d834ced...",
+                "ExecutorDID":"bafybmicvcv...w3uu",
+                "SmartContractData":"{\"add_admin\": {\"admin_did\":\"bafybmie4zt...qi5i\"}}",
+                "BlockNo":null,"Epoch":null,
+                "InitiatorSignature":null,"InitiatorSignData":null}]}</code></pre>
+      <p class="ep-note" style="margin-bottom:0"><code>ExecutorDID</code> echoes the existing admin that signed the write.</p>
+    </div>
+  </div>
+</section>
+
+<section id="errors">
+  <h2><span class="num">07</span>Responses and errors</h2>
+
+  <h3>Envelope shapes vary</h3>
+  <p>Most endpoints return <code>{status, message, result}</code>, but three do not. Check the per-endpoint examples rather than assuming:</p>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Endpoint</th><th>Read the payload from</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">/createdid</td><td>top level — <code>{"did": "..."}</code>, no envelope</td></tr>
+      <tr><td class="mono">/admin/activity/list</td><td>top level — a bare array</td></tr>
+      <tr><td class="mono">/users/:did/payouts</td><td><code>ft_info</code> — <code>result</code> is always null</td></tr>
+      <tr><td class="mono">everything else</td><td><code>result</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Fields that are always empty</h3>
+  <p><code>BlockNo</code>, <code>Epoch</code>, <code>InitiatorSignature</code>, and <code>InitiatorSignData</code> are returned as <code>null</code>, and <code>queued_at</code> as <code>""</code>. They are preserved so existing response destructuring keeps working, but carry no data. Do not branch on them.</p>
+
+  <h3>Status codes</h3>
+  <div class="tw">
+  <table>
+    <thead><tr><th>Code</th><th>Meaning</th><th>What to do</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">200</td><td>Success</td><td>—</td></tr>
+      <tr><td class="mono">202</td><td>Payout queued</td><td>Poll the status endpoint</td></tr>
+      <tr><td class="mono">400</td><td>Validation failed</td><td>Read <code>error</code>; fix the payload</td></tr>
+      <tr><td class="mono">401</td><td>Missing or expired token</td><td>Generate a new token</td></tr>
+      <tr><td class="mono">404</td><td>Unknown request id or user</td><td>Check the identifier</td></tr>
+      <tr><td class="mono">500</td><td>Server or contract lookup failure</td><td>Read <code>message</code></td></tr>
+      <tr><td class="mono">502</td><td>Rubix node rejected the call</td><td>Retry; escalate if it persists</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>An unknown <code>admin_did</code> returns <code>500</code> with <code>"admin has no add_activity contract"</code> rather than a <code>404</code>. Validate admin DIDs against your own list before calling.</p>
+</section>
+
+<section id="cron">
+  <h2><span class="num">08</span>Running from cron</h2>
+
+  <ul class="plain">
+    <li><strong>One account per job.</strong> Refresh-token rotation means concurrent jobs on a shared account revoke each other — the most common way to break this integration.</li>
+    <li><strong>Generate a token per run</strong> for jobs firing less often than every 15 minutes. Simpler than persisting a refresh token, and avoids rotation entirely.</li>
+    <li><strong>Allow long timeouts.</strong> Chain writes block on signing. The gateway permits 300 s — set your client to match rather than the usual 30 s.</li>
+    <li><strong>Spread load across admin DIDs.</strong> Payouts serialize per admin, so ten payouts on one admin queue up while ten across ten admins run in parallel.</li>
+  </ul>
+
+<pre><code>#!/usr/bin/env bash
+set -euo pipefail
+BASE=https://yqa.rubix.network
+
+TOKEN=$(curl -sS -m 30 -X POST "$BASE/api/auth/token" \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$YMCA_EMAIL\",\"password\":\"$YMCA_PASSWORD\"}" \
+  | jq -er '.access_token')
+
+REQ=$(curl -sS -m 60 -X POST "$BASE/admin/payouts" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{\"user_did\":\"$USER_DID\",\"admin_did\":\"$ADMIN_DID\",
+       \"activity_id\":[\"cycle-5k\"]}" \
+  | jq -er '.result.request_id')
+
+for _ in $(seq 20); do
+  S=$(curl -sS -m 30 "$BASE/admin/payouts/status/$REQ" \
+        -H "Authorization: Bearer $TOKEN" | jq -r '.result.status')
+  case "$S" in
+    success) echo "ok $REQ"; exit 0 ;;
+    failed)  echo "failed $REQ" >&2; exit 1 ;;
+  esac
+  sleep 3
+done
+echo "timeout waiting on $REQ" >&2; exit 1</code></pre>
+
+  <div class="callout">
+    <h4>Test environment — two things to know</h4>
+    <p><strong>Registration is open.</strong> Anyone who can reach the host can create an account, and every account holds the full API surface across all ten admin DIDs. Acceptable here; it will be restricted before production.</p>
+    <p><strong>Payouts do not move tokens yet.</strong> The fungible-token leg is disabled server-side. A payout settles with <code>status: success</code> and real transaction ids, and the audit record is written to the chain — but no <code>ytoken</code> balance changes. Build against the request and status contract; balances will start moving once the leg is enabled, with no change to this API.</p>
+  </div>
+</section>
+
+<footer>
+  All seven endpoints exercised end to end against https://yqa.rubix.network on 25 August 2026.
+</footer>
+</div>

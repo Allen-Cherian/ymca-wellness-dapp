@@ -59,6 +59,33 @@ type ExecuteContractRequest struct {
 	ContractInput  string `json:"contract_input"`
 }
 
+// LoginRequest is POST /api/auth/login body.
+type LoginRequest struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// RefreshRequest is POST /api/auth/refresh body.
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// LogoutRequest is POST /api/auth/logout body. Either revokes the single
+// refresh token in the body or, with all=true, every active refresh for
+// the authenticated user.
+type LogoutRequest struct {
+	RefreshToken string `json:"refresh_token,omitempty"`
+	All          bool   `json:"all,omitempty"`
+}
+
+// TokenPairResponse is returned by /api/auth/login and /api/auth/refresh.
+type TokenPairResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"`
+	TokenType    string `json:"token_type"`
+}
+
 // ----- Generic response envelopes -----
 
 type okResponse struct {

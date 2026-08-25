@@ -8,7 +8,9 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
+	"ymca-wellness-dapp/internal/auth"
 	"ymca-wellness-dapp/internal/config"
+	"ymca-wellness-dapp/internal/database"
 	"ymca-wellness-dapp/internal/queue"
 	"ymca-wellness-dapp/internal/service"
 )
@@ -18,11 +20,12 @@ type Server struct {
 	Cfg    *config.AppConfig
 	Svc    *service.Service
 	Queue  *queue.Manager
+	Keys   *auth.Keys
 	Engine *gin.Engine
 }
 
 // New builds a configured *Server.
-func New(cfg *config.AppConfig, svc *service.Service, qm *queue.Manager) *Server {
+func New(cfg *config.AppConfig, svc *service.Service, qm *queue.Manager, keys *auth.Keys) *Server {
 	r := gin.Default()
 
 	// Permissive CORS for dev; tighten in prod.
@@ -34,15 +37,29 @@ func New(cfg *config.AppConfig, svc *service.Service, qm *queue.Manager) *Server
 		AllowCredentials: false,
 	}))
 
-	s := &Server{Cfg: cfg, Svc: svc, Queue: qm, Engine: r}
+	s := &Server{Cfg: cfg, Svc: svc, Queue: qm, Keys: keys, Engine: r}
 	s.registerRoutes()
 	return s
 }
 
 func (s *Server) registerRoutes() {
+	// --- Open routes (no token required) ---
 	s.Engine.GET("/api/health", s.handleHealth)
+	s.Engine.POST("/api/auth/login", s.handleLogin)
+	s.Engine.POST("/api/auth/refresh", s.handleRefresh)
 
-	api := s.Engine.Group("/api")
+	// --- Protected routes ---
+	// Everything else (v2 /api/* and the v1 aliases) sits behind
+	// RequireAuth. Bootstrap flow: env-seeded operator -> login ->
+	// /api/admins/setup. The earlier "setup is open" trust boundary is
+	// gone; the env-seeded credential is the new boundary.
+	protected := s.Engine.Group("", auth.RequireAuth(s.Keys, database.RoleOperator))
+
+	// Authenticated auth endpoints
+	protected.POST("/api/auth/logout", s.handleLogout)
+	protected.GET("/api/auth/me", s.handleMe)
+
+	api := protected.Group("/api")
 	{
 		// Reward transfer (async)
 		api.POST("/rewards/transfer", s.handleTransferReward)
@@ -76,13 +93,13 @@ func (s *Server) registerRoutes() {
 	// response shapes to honor the original proxy.rubix.network API doc.
 	// Reuses v2 service-layer logic; only the request/response
 	// marshaling differs.
-	s.Engine.POST("/createdid", s.handleV1CreateDID)
-	s.Engine.POST("/admin/activity/add", s.handleV1AddActivity)
-	s.Engine.GET("/admin/activity/list", s.handleV1ActivityList)
-	s.Engine.POST("/admin/payouts", s.handleV1Payouts)
-	s.Engine.GET("/admin/payouts/status/:request_id", s.handleV1PayoutStatus)
-	s.Engine.POST("/admin/user/add", s.handleV1UserAdd)
-	s.Engine.GET("/users/:user_did/payouts", s.handleV1UserPayouts)
+	protected.POST("/createdid", s.handleV1CreateDID)
+	protected.POST("/admin/activity/add", s.handleV1AddActivity)
+	protected.GET("/admin/activity/list", s.handleV1ActivityList)
+	protected.POST("/admin/payouts", s.handleV1Payouts)
+	protected.GET("/admin/payouts/status/:request_id", s.handleV1PayoutStatus)
+	protected.POST("/admin/user/add", s.handleV1UserAdd)
+	protected.GET("/users/:user_did/payouts", s.handleV1UserPayouts)
 }
 
 func (s *Server) handleHealth(c *gin.Context) {

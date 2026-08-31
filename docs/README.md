@@ -5,6 +5,7 @@ open them in a browser, or publish them as-is.
 
 | File | Audience | Covers |
 |---|---|---|
+| `RUNBOOK.md` | Operators | First-time setup, post-reboot recovery, running the service, known gaps |
 | `v1-payouts-api.html` | Client integrators | The seven v1-contract endpoints: `/createdid`, `/admin/activity/add`, `/admin/activity/list`, `/admin/payouts`, `/admin/payouts/status/:id`, `/admin/user/add`, `/users/:did/payouts` — plus bearer-token auth |
 | `v1-api-reference.md` | Client integrators | The same seven endpoints as a plain reference — one line per endpoint plus its response structure. Source for the Word version. |
 | `api-guide.html` | Internal / full surface | The v2 `/api/*` endpoints, including admin provisioning and contract deploy/execute |

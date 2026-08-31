@@ -1,11 +1,14 @@
 # docs
 
-Client-facing API documentation. Both files are self-contained HTML —
-open them in a browser, or publish them as-is.
+Operations and client-facing API documentation. The HTML files are
+self-contained — open them in a browser, or publish them as-is.
+
+**After a VM reboot, start with [`RESTART.md`](RESTART.md).**
 
 | File | Audience | Covers |
 |---|---|---|
-| `RUNBOOK.md` | Operators | First-time setup, post-reboot recovery, running the service, known gaps |
+| `RESTART.md` | Operators | Bringing the dApp back up after a reboot — the short path, with the checks that catch silent failures |
+| `RUNBOOK.md` | Operators | First-time setup, running the service, systemd, known gaps |
 | `v1-payouts-api.html` | Client integrators | The seven v1-contract endpoints: `/createdid`, `/admin/activity/add`, `/admin/activity/list`, `/admin/payouts`, `/admin/payouts/status/:id`, `/admin/user/add`, `/users/:did/payouts` — plus bearer-token auth |
 | `v1-api-reference.md` | Client integrators | The same seven endpoints as a plain reference — one line per endpoint plus its response structure. Source for the Word version. |
 | `api-guide.html` | Internal / full surface | The v2 `/api/*` endpoints, including admin provisioning and contract deploy/execute |

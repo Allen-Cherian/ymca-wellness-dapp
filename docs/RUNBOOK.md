@@ -45,7 +45,7 @@ docker run -d --name ymca-pg \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=ymca_wellness_dapp \
   -e PGDATA=/var/lib/postgresql/pgdata \
-  -v /datadrive/pgdata-ymca:/var/lib/postgresql \
+  -v /home/rubix/pgdata-ymca:/var/lib/postgresql \
   -p 5445:5432 \
   --restart unless-stopped \
   postgres:18
@@ -103,8 +103,8 @@ cp .env.example .env
 sed -i 's/^SERVER_PORT=.*/SERVER_PORT=9100/' .env
 sed -i 's/^DB_PORT=.*/DB_PORT=5445/' .env
 sed -i 's/^DB_NAME=.*/DB_NAME=ymca_wellness_dapp/' .env
-sed -i 's/^BOOTSTRAP_EMAIL=.*/BOOTSTRAP_EMAIL=you@example.com/' .env
-sed -i 's/^BOOTSTRAP_PASSWORD=.*/BOOTSTRAP_PASSWORD=<choose one>/' .env
+sed -i 's/^BOOTSTRAP_EMAIL=.*/BOOTSTRAP_EMAIL=allen.i@rubix.net/' .env
+sed -i 's/^BOOTSTRAP_PASSWORD=.*/BOOTSTRAP_PASSWORD=rubix@123/' .env
 grep -E '^SERVER_PORT|^DB_|^BOOTSTRAP_|^FT_NAME' .env
 ```
 
@@ -146,23 +146,24 @@ go build -o ymca-dapp ./cmd/server && echo BUILD OK
 See [Part 3](#part-3--running-the-service) for how to run it. On the
 first start, look for `bootstrap operator created:` in the log.
 
-### 8. Fund the nodes and deploy contracts
+### 8. Deploy the contracts
 
-Contract deployment spends RBT, so the nodes need a balance first:
+Each node needs an RBT balance first — contract deployment spends a small
+amount per contract. **Funding is a Rubix node operation, not a dApp one**,
+and it happens outside this repo when the testnet is stood up.
 
-```bash
-jq -r '.[] | "\(.did) \(.port)"' /datadrive/rubix-docker/did_results.json |
-while read -r did port; do
-  echo "== node $port =="
-  REQ=$(curl -s -X POST "http://localhost:$port/api/generate-local-rbt" \
-    -H 'Content-Type: application/json' \
-    -d "{\"did\":\"$did\",\"number_of_tokens\":100,\"start_index\":0}" | jq -r '.result.id // empty')
-  [ -z "$REQ" ] && { echo "  generate failed"; continue; }
-  curl -s -X POST "http://localhost:$port/rubix/v1/signature" \
-    -H 'Content-Type: application/json' \
-    -d "{\"id\":\"$REQ\",\"password\":\"mypassword\"}" | jq -r '"  " + (.message // "no message")'
-done
+The `POST /api/generate-local-rbt` call that older documentation used is
+deprecated and now returns 404. Use whatever funding mechanism the current
+`rubixgoplatform` build provides.
+
+A node with no spendable RBT fails deployment at the transaction step with:
+
 ```
+failed to lock RBT for SC committed tokens: lockSelectedTokens: no tokens provided
+```
+
+If you see that, fund the nodes and re-run — the script skips contracts
+that already deployed.
 
 Then deploy all thirty contracts (10 admins × `reward`, `add_activity`,
 `add_admin`):

@@ -107,24 +107,22 @@ See [§9 Configuration](#9-configuration) for the full env var list.
 ### 3.4 Bootstrap each Rubix admin (manual, one-time)
 
 For every admin you plan to provision, the underlying Rubix node needs
-test RBT and a minted ytoken FT. The dApp does **not** do this — it's a
-one-time admin bootstrap done directly against the Rubix node.
+RBT (contract deployment and transactions spend it) and a minted ytoken
+FT. The dApp does **not** do this — it's a one-time admin bootstrap done
+directly against the Rubix node.
+
+**Funding the node with RBT** is a Rubix operation outside this repo. The
+`POST /api/generate-local-rbt` call this section used to document is
+deprecated and now returns 404; use whatever mechanism the current
+`rubixgoplatform` build provides.
+
+**Minting the reward FT:**
 
 ```bash
-export NODE=http://localhost:20000
-export DID=<admin DID, after provisioning via /api/admins/setup>
+export NODE=http://localhost:8000
+export DID=<admin DID>
 export PASS=mypassword
 
-# Generate test RBT (async: PostTx → Sign)
-RBT_REQ=$(curl -s -X POST $NODE/api/generate-local-rbt \
-  -H "Content-Type: application/json" \
-  -d "{\"did\":\"$DID\",\"number_of_tokens\":100,\"start_index\":0}" \
-  | jq -r '.result.id')
-curl -s -X POST $NODE/rubix/v1/signature \
-  -H "Content-Type: application/json" \
-  -d "{\"id\":\"$RBT_REQ\",\"password\":\"$PASS\"}"
-
-# Mint ytoken FT
 FT_REQ=$(curl -s -X POST $NODE/rubix/v1/fts/mint \
   -H "Content-Type: application/json" \
   -d "{\"did\":\"$DID\",\"ft_name\":\"ytoken\",\"ft_count\":10000,\"token_count\":10,\"ft_num_start_index\":0}" \
@@ -134,8 +132,12 @@ curl -s -X POST $NODE/rubix/v1/signature \
   -d "{\"id\":\"$FT_REQ\",\"password\":\"$PASS\"}"
 ```
 
-Repeat for every admin. The FT name (`ytoken`) must match the
-`FT_NAME` env var.
+The FT name (`ytoken`) must match the `FT_NAME` env var. Minting burns
+RBT, so the node must be funded first.
+
+Note the reward transfer's FT leg is currently disabled in
+`ProcessTransferReward`, so this mint is not yet required for transfers
+to complete — see [§11](#11-troubleshooting).
 
 ---
 
@@ -793,7 +795,6 @@ contracts.json             Per-machine admin → contract hash snapshot (NEVER c
 | `GET  /rubix/v1/smart_contracts/<id>/chain` | `/api/contracts/.../chain` |
 | `POST /rubix/v1/tx` | reward transfer, activity/add, admin/add, deploy, execute-contract |
 | `POST /rubix/v1/signature` | finalizes every async Rubix flow |
-| `POST /api/generate-local-rbt` | manual admin bootstrap (§3.4) |
 | `POST /rubix/v1/fts/mint` | manual admin bootstrap (§3.4) |
 
 ### Correlation keys

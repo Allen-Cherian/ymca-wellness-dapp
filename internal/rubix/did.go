@@ -73,40 +73,7 @@ func (c *Client) RegisterDID(ctx context.Context, did string) (string, error) {
 	return "", fmt.Errorf("rubix RegisterDID: could not extract request id from result: %s", truncate(string(br.Result), 200))
 }
 
-// GenerateLocalRBTRequest is the body of POST /api/generate-local-rbt.
-//
-// JSON tags match core/model/tokens.go (snake_case).
-type GenerateLocalRBTRequest struct {
-	NumberOfTokens int    `json:"number_of_tokens"`
-	DID            string `json:"did"`
-	StartIndex     int    `json:"start_index"`
-}
-
-// GenerateLocalRBT issues test RBT to a DID on a localnet/testnet node.
-// The call is asynchronous on the Rubix side: the returned requestID must
-// be signed via Sign() to finalize.
-func (c *Client) GenerateLocalRBT(ctx context.Context, req GenerateLocalRBTRequest) (string, error) {
-	br, err := c.postJSON(ctx, "/api/generate-local-rbt", req)
-	if err != nil {
-		return "", err
-	}
-	// Preferred: SignReqData-shaped result {id, hash}.
-	var asObj struct {
-		ID        string `json:"id"`
-		RequestID string `json:"request_id"`
-	}
-	if jerr := json.Unmarshal(br.Result, &asObj); jerr == nil {
-		if asObj.ID != "" {
-			return asObj.ID, nil
-		}
-		if asObj.RequestID != "" {
-			return asObj.RequestID, nil
-		}
-	}
-	// Fallback: bare request-id string.
-	var asString string
-	if jerr := json.Unmarshal(br.Result, &asString); jerr == nil && asString != "" {
-		return asString, nil
-	}
-	return "", fmt.Errorf("rubix GenerateLocalRBT: could not extract request id from result: %s", truncate(string(br.Result), 200))
-}
+// Test RBT was previously issued via POST /api/generate-local-rbt. That
+// endpoint is deprecated and now 404s, so the client method was removed
+// rather than left as a call that cannot succeed. Fund nodes through
+// whatever mechanism the current rubixgoplatform build provides.

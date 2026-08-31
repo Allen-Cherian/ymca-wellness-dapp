@@ -104,7 +104,7 @@ type SignResult struct {
 	Result        json.RawMessage
 }
 
-// Sign completes the async request started by PostTx/MintFT/GenerateLocalRBT/
+// Sign completes the async request started by PostTx/MintFT/
 // GenerateSmartContract. This call blocks on the Rubix side until quorum
 // signing finishes, then returns the terminal response.
 func (c *Client) Sign(ctx context.Context, requestID, password string) (*SignResult, error) {

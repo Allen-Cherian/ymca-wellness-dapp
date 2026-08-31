@@ -45,3 +45,6 @@ logs/
 # ---------------------------------------------------------------- Misc
 dist/
 tmp/
+
+# Generated from v1-api-reference.md via pandoc; regenerate on demand.
+docs/*.docx

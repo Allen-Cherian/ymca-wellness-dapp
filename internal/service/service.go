@@ -333,6 +333,11 @@ func (s *Service) ProcessTransferReward(ctx context.Context, in TransferRewardIn
 	if points <= 0 {
 		return nil, fmt.Errorf("activities resolved to zero reward points")
 	}
+	// Fail here rather than sending an empty creatorDID to the node, which
+	// reports it as an opaque FT-not-found rather than a config problem.
+	if s.Cfg.Env.FTCreatorDID == "" {
+		return nil, fmt.Errorf("FT_CREATOR_DID is not set; reward transfers cannot name the minting DID")
+	}
 
 	payload, err := json.Marshal(map[string]any{
 		"action":        "transfer",
@@ -353,13 +358,21 @@ func (s *Service) ProcessTransferReward(ctx context.Context, in TransferRewardIn
 		Initiator: in.AdminDID,
 		Owner:     in.UserDID,
 		Tokens: rubix.TransactionTokenDetails{
-			// FT leg disabled for now — testing SC chain audit path only.
-			// Re-enable once admin DID has spendable ytoken FTs.
-			// FT: []rubix.FTInfo{{
-			// 	FTName:      s.Cfg.Rubix.FT.Name,
-			// 	NumberOfFts: float64(points),
-			// 	CreatorDID:  in.AdminDID,
-			// }},
+			// The FT leg moves the reward itself; the SC leg below records
+			// the audit entry. Both settle in one unified transaction, so a
+			// successful Sign means the tokens moved and the chain recorded
+			// why.
+			//
+			// CreatorDID is the central minter, not the paying admin: Rubix
+			// keys a fungible token on (name, creator), and every admin
+			// spends FTs distributed from that one mint. Naming the admin
+			// here would make the node look for FTs it minted itself and
+			// find none.
+			FT: []rubix.FTInfo{{
+				FTName:      s.Cfg.Env.FTName,
+				NumberOfFts: float64(points),
+				CreatorDID:  s.Cfg.Env.FTCreatorDID,
+			}},
 			SmartContract: []rubix.SmartContractInfo{{
 				SmartContractId: contractHash,
 				Value:           0,

@@ -28,7 +28,13 @@ type EnvConfig struct {
 	DBName     string
 	DBSSLMode  string
 
-	FTName                 string
+	FTName string
+	// FTCreatorDID is the DID that minted the reward FT. Rubix identifies a
+	// fungible token by (ft_name, creator DID), not by name alone, so every
+	// transfer leg must name the original minter — not the admin doing the
+	// paying. Admins are distributed FTs from this central mint and spend
+	// them onward.
+	FTCreatorDID           string
 	RubixHTTPTimeoutSecond int
 	QueueBufferSize        int
 
@@ -82,6 +88,7 @@ func Load() (*AppConfig, error) {
 		DBName:                 getEnv("DB_NAME", "ymca_wellness_cafe_v2"),
 		DBSSLMode:              getEnv("DB_SSLMODE", "disable"),
 		FTName:                 getEnv("FT_NAME", "ytoken"),
+		FTCreatorDID:           getEnv("FT_CREATOR_DID", ""),
 		RubixHTTPTimeoutSecond: getEnvInt("RUBIX_HTTP_TIMEOUT_SECONDS", 120),
 		QueueBufferSize:        getEnvInt("QUEUE_BUFFER_SIZE", 1000),
 

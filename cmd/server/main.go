@@ -56,12 +56,13 @@ func main() {
 	// Worker job timeout = 2x HTTP timeout to allow for Sign() blocking.
 	procTimeout := time.Duration(cfg.Env.RubixHTTPTimeoutSecond*2) * time.Second
 	qm := queue.NewManager(svc, cfg.Env.QueueBufferSize, procTimeout)
+	qm.SetMinInterval(cfg.Env.PayoutMinInterval)
 
 	srv := server.New(cfg, svc, qm, keys)
 
 	go func() {
-		log.Printf("ymca-wellness-dapp listening on :%s (admins=%d, queue_buf=%d)",
-			cfg.Env.ServerPort, cfg.AdminCount(), cfg.Env.QueueBufferSize)
+		log.Printf("ymca-wellness-dapp listening on :%s (admins=%d, queue_buf=%d, payout_min_interval=%s)",
+			cfg.Env.ServerPort, cfg.AdminCount(), cfg.Env.QueueBufferSize, cfg.Env.PayoutMinInterval)
 		if err := srv.Run(); err != nil {
 			log.Fatalf("server.Run: %v", err)
 		}

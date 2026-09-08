@@ -31,6 +31,11 @@ type EnvConfig struct {
 	FTName                 string
 	RubixHTTPTimeoutSecond int
 	QueueBufferSize        int
+	// PayoutMinInterval is the minimum gap between the end of one reward
+	// execution and the start of the next one for the SAME admin. Zero
+	// disables spacing. See docs/INCIDENT-2026-09-04-chain-fork.md: back-
+	// to-back executions on one contract crash the owner node mid-consensus.
+	PayoutMinInterval time.Duration
 
 	// Bearer-token auth
 	JWTPrivateKeyPath string
@@ -84,6 +89,7 @@ func Load() (*AppConfig, error) {
 		FTName:                 getEnv("FT_NAME", "ytoken"),
 		RubixHTTPTimeoutSecond: getEnvInt("RUBIX_HTTP_TIMEOUT_SECONDS", 120),
 		QueueBufferSize:        getEnvInt("QUEUE_BUFFER_SIZE", 1000),
+		PayoutMinInterval:      time.Duration(getEnvInt("PAYOUT_MIN_INTERVAL_MS", 1000)) * time.Millisecond,
 
 		JWTPrivateKeyPath: getEnv("JWT_PRIVATE_KEY_PATH", "./keys/jwt_private.pem"),
 		JWTPublicKeyPath:  getEnv("JWT_PUBLIC_KEY_PATH", "./keys/jwt_public.pem"),

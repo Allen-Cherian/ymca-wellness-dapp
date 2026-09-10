@@ -430,9 +430,10 @@ type PayoutSummaryRow struct {
 }
 
 // PayoutSummary aggregates reward transfers created at or after since,
-// per admin, joined with admins for node_port. adminDID narrows to one
-// admin when non-empty. Admins with no rows in the window are omitted.
-func PayoutSummary(ctx context.Context, since time.Time, adminDID string) ([]PayoutSummaryRow, error) {
+// per admin, joined with admins for node_port. adminDID and userDID each
+// narrow the rows when non-empty. Admins with no rows in the window are
+// omitted.
+func PayoutSummary(ctx context.Context, since time.Time, adminDID, userDID string) ([]PayoutSummaryRow, error) {
 	q := `
 		SELECT ts.admin_did, COALESCE(a.node_port, ''),
 		       count(*),
@@ -450,9 +451,10 @@ func PayoutSummary(ctx context.Context, since time.Time, adminDID string) ([]Pay
 		LEFT JOIN admins a ON a.did = ts.admin_did
 		WHERE ts.kind = 'reward' AND ts.created_at >= $1
 		  AND ($3 = '' OR ts.admin_did = $3)
+		  AND ($4 = '' OR ts.user_did = $4)
 		GROUP BY ts.admin_did, a.node_port
 		ORDER BY a.node_port NULLS LAST, ts.admin_did`
-	rows, err := Pool.Query(ctx, q, since, mismatchNeedle, adminDID)
+	rows, err := Pool.Query(ctx, q, since, mismatchNeedle, adminDID, userDID)
 	if err != nil {
 		return nil, fmt.Errorf("PayoutSummary: %w", err)
 	}
@@ -510,12 +512,21 @@ func PayoutFailures(ctx context.Context, since time.Time, adminDID string, limit
 	return out, rows.Err()
 }
 
-// PayoutHistory returns one admin's reward transfers, newest first, with
-// every column. status filters when non-empty; since filters when
-// non-zero.
-func PayoutHistory(ctx context.Context, adminDID, status string, since time.Time, limit int) ([]TransferStatus, error) {
-	where := "admin_did = $1 AND kind = $2"
-	args := []any{adminDID, KindReward}
+// PayoutHistory returns reward transfers newest first with every column,
+// filtered by adminDID and/or userDID (each applied when non-empty; the
+// caller ensures at least one is set). status filters when non-empty;
+// since filters when non-zero.
+func PayoutHistory(ctx context.Context, adminDID, userDID, status string, since time.Time, limit int) ([]TransferStatus, error) {
+	where := "kind = $1"
+	args := []any{KindReward}
+	if adminDID != "" {
+		args = append(args, adminDID)
+		where += fmt.Sprintf(" AND admin_did = $%d", len(args))
+	}
+	if userDID != "" {
+		args = append(args, userDID)
+		where += fmt.Sprintf(" AND user_did = $%d", len(args))
+	}
 	if status != "" {
 		args = append(args, status)
 		where += fmt.Sprintf(" AND status = $%d", len(args))

@@ -40,19 +40,20 @@ type fakeStore struct {
 	gotLimit  int
 	gotStatus string
 	gotAdmin  string
+	gotUser   string
 	gotAfter  time.Time
 }
 
-func (f *fakeStore) PayoutSummary(_ context.Context, since time.Time, adminDID string) ([]database.PayoutSummaryRow, error) {
-	f.gotSince, f.gotAdmin = since, adminDID
+func (f *fakeStore) PayoutSummary(_ context.Context, since time.Time, adminDID, userDID string) ([]database.PayoutSummaryRow, error) {
+	f.gotSince, f.gotAdmin, f.gotUser = since, adminDID, userDID
 	return f.summary, f.err
 }
 func (f *fakeStore) PayoutFailures(_ context.Context, since time.Time, adminDID string, limit int) ([]database.FailureGroup, error) {
 	f.gotSince, f.gotAdmin, f.gotLimit = since, adminDID, limit
 	return f.failures, f.err
 }
-func (f *fakeStore) PayoutHistory(_ context.Context, adminDID, status string, since time.Time, limit int) ([]database.TransferStatus, error) {
-	f.gotAdmin, f.gotStatus, f.gotSince, f.gotLimit = adminDID, status, since, limit
+func (f *fakeStore) PayoutHistory(_ context.Context, adminDID, userDID, status string, since time.Time, limit int) ([]database.TransferStatus, error) {
+	f.gotAdmin, f.gotUser, f.gotStatus, f.gotSince, f.gotLimit = adminDID, userDID, status, since, limit
 	return f.history, f.err
 }
 func (f *fakeStore) ListAdminContracts(_ context.Context, adminDID string) ([]database.AdminContractRow, error) {
@@ -232,6 +233,12 @@ func TestDebugSummary(t *testing.T) {
 		t.Errorf("last_success_at should be null, got %v", row["last_success_at"])
 	}
 
+	// user_did filter is passed through.
+	get(t, s, "/api/debug/payouts/summary?user_did=bafybmiuser")
+	if store.gotUser != "bafybmiuser" || store.gotAdmin != "" {
+		t.Errorf("user filter: admin=%q user=%q", store.gotAdmin, store.gotUser)
+	}
+
 	// Default window: since is about 24h ago.
 	get(t, s, "/api/debug/payouts/summary")
 	if d := time.Since(store.gotSince); d < 23*time.Hour || d > 25*time.Hour {
@@ -313,7 +320,11 @@ func TestDebugHistory(t *testing.T) {
 
 	code, _ = get(t, s, "/api/debug/payouts/history")
 	if code != http.StatusBadRequest {
-		t.Errorf("missing admin_did: got %d, want 400", code)
+		t.Errorf("missing admin_did and user_did: got %d, want 400", code)
+	}
+	code, _ = get(t, s, "/api/debug/payouts/history?user_did=bafybmiuser&status=failed")
+	if code != http.StatusOK || store.gotUser != "bafybmiuser" || store.gotAdmin != "" || store.gotStatus != "failed" {
+		t.Errorf("user-only history: code=%d admin=%q user=%q status=%q", code, store.gotAdmin, store.gotUser, store.gotStatus)
 	}
 	code, _ = get(t, s, "/api/debug/payouts/history?admin_did=x&status=done")
 	if code != http.StatusBadRequest {
@@ -413,6 +424,7 @@ func TestDebugForkCheck(t *testing.T) {
 	want := map[string]any{
 		"contract": scID, "node_port": "8003", "quorum_head": hexA, "owner_expected": hexB,
 		"owner_current_head": hexB, "owner_chain_length": float64(4221), "forked": true,
+		"owner_has_quorum_head": false, "mismatch_stale": false,
 		"last_success_tx": hexC, "last_success_at": "2026-09-08T09:10:09Z",
 		"first_mismatch_at": "2026-09-08T09:10:12Z", "mismatch_request_id": "req-mm",
 	}
@@ -428,9 +440,43 @@ func TestDebugForkCheck(t *testing.T) {
 	// After the replay the owner's head equals the quorum's: not forked.
 	ownerHead = hexA
 	_, body = get(t, s, "/api/debug/fork-check?admin_did="+did4)
-	if d := data(t, body); d["forked"] != false || d["owner_current_head"] != hexA {
+	if d := data(t, body); d["forked"] != false || d["owner_current_head"] != hexA || d["owner_has_quorum_head"] != true {
 		t.Errorf("after repair: %v", d)
 	}
+
+	// Repaired and moved on: the quorum's block is deep in the chain and
+	// newer successes exist. Must NOT report a fork.
+	ownerHead = "newerHead"
+	s.fetchChain = func(context.Context, string, string) ([]rubix.ChainEntry, error) {
+		ch := chainOf(4230, ownerHead)
+		ch[4220].TransactionID = hexA
+		return ch, nil
+	}
+	store.success = &database.TransferStatus{TransactionID: "newerHead", CreatedAt: seen.Add(time.Hour)}
+	store.firstAt = nil
+	_, body = get(t, s, "/api/debug/fork-check?admin_did="+did4)
+	if d := data(t, body); d["forked"] != false || d["owner_has_quorum_head"] != true || d["mismatch_stale"] != true || d["first_mismatch_at"] != nil {
+		t.Errorf("repaired and moved on: %v", d)
+	}
+
+	// Stale mismatch but the quorum block never made it onto the owner
+	// (e.g. the owner was re-deployed): still not forked, with a note.
+	s.fetchChain = func(context.Context, string, string) ([]rubix.ChainEntry, error) { return chainOf(5, "fresh"), nil }
+	_, body = get(t, s, "/api/debug/fork-check?admin_did="+did4)
+	if d := data(t, body); d["forked"] != false || d["mismatch_stale"] != true || d["owner_has_quorum_head"] != false || d["note"] == nil {
+		t.Errorf("stale without block: %v", d)
+	}
+
+	// Empty chain from the node is an error, not a fork.
+	s.fetchChain = func(context.Context, string, string) ([]rubix.ChainEntry, error) { return nil, nil }
+	_, body = get(t, s, "/api/debug/fork-check?admin_did="+did4)
+	if d := data(t, body); d["forked"] != false || d["node_error"] == nil {
+		t.Errorf("empty chain: %v", d)
+	}
+	store.success = &database.TransferStatus{TransactionID: hexC, CreatedAt: lastOK}
+	store.firstAt = &firstMM
+	s.fetchChain = fetch
+	ownerHead = hexA
 
 	// Node unreachable: 200 with node_error, forked stays false.
 	s.fetchChain = func(context.Context, string, string) ([]rubix.ChainEntry, error) {

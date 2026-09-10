@@ -578,6 +578,11 @@ There is no `config.toml`.
 | `RUBIX_HTTP_TIMEOUT_SECONDS` | `120` | Per-request timeout to Rubix |
 | `QUEUE_BUFFER_SIZE` | `1000` | Per-admin channel capacity |
 | `PAYOUT_MIN_INTERVAL_MS` | `1000` | Minimum gap between consecutive reward executions for the same admin; `0` disables |
+| `NODE_DB_HOST` | `127.0.0.1` | Host of the nodes' Postgres, for `/api/debug/node/*` |
+| `NODE_DB_PORT_OFFSET` | `1000` | Node DB port = node API port + offset |
+| `NODE_DB_USER` | `rubix` | Node Postgres user; sessions are opened read-only |
+| `NODE_DB_PASSWORD` | empty | Empty disables `/api/debug/node/*` (503) |
+| `NODE_DB_NAME` | `rubix` | Node database name |
 
 Admins (DID, password, node port) are **not** in env — they live in the
 `admins` table, populated by `/api/admins/setup`.

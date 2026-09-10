@@ -28,6 +28,8 @@ type Server struct {
 	// substitute fakes.
 	debug      debugStore
 	fetchChain chainFetcher
+	// node backs /api/debug/node/*; nil or unconfigured answers 503.
+	node nodeStore
 }
 
 // New builds a configured *Server.
@@ -119,6 +121,13 @@ func (s *Server) registerRoutes() {
 		api.GET("/debug/payouts/history", s.handleDebugPayoutHistory)
 		api.GET("/debug/contracts", s.handleDebugContracts)
 		api.GET("/debug/fork-check", s.handleDebugForkCheck)
+		// Node-database diagnostics (read-only, NODE_DB_* in .env).
+		api.GET("/debug/node/contracts", s.handleDebugNodeContracts)
+		api.GET("/debug/node/chain", s.handleDebugNodeChain)
+		api.GET("/debug/node/transaction", s.handleDebugNodeTransaction)
+		api.GET("/debug/node/locks", s.handleDebugNodeLocks)
+		api.GET("/debug/node/tokens", s.handleDebugNodeTokens)
+		api.GET("/debug/node/quorum", s.handleDebugNodeQuorum)
 	}
 
 	// v1 client-contract aliases. Same handlers under different paths /

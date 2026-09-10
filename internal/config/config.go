@@ -37,6 +37,14 @@ type EnvConfig struct {
 	// to-back executions on one contract crash the owner node mid-consensus.
 	PayoutMinInterval time.Duration
 
+	// Node database access for /api/debug/node/* (read-only). Disabled
+	// unless NodeDBPassword is set. DB port = node API port + offset.
+	NodeDBHost       string
+	NodeDBPortOffset int
+	NodeDBUser       string
+	NodeDBPassword   string
+	NodeDBName       string
+
 	// Bearer-token auth
 	JWTPrivateKeyPath string
 	JWTPublicKeyPath  string
@@ -90,6 +98,12 @@ func Load() (*AppConfig, error) {
 		RubixHTTPTimeoutSecond: getEnvInt("RUBIX_HTTP_TIMEOUT_SECONDS", 120),
 		QueueBufferSize:        getEnvInt("QUEUE_BUFFER_SIZE", 1000),
 		PayoutMinInterval:      time.Duration(getEnvInt("PAYOUT_MIN_INTERVAL_MS", 1000)) * time.Millisecond,
+
+		NodeDBHost:       getEnv("NODE_DB_HOST", "127.0.0.1"),
+		NodeDBPortOffset: getEnvInt("NODE_DB_PORT_OFFSET", 1000),
+		NodeDBUser:       getEnv("NODE_DB_USER", "rubix"),
+		NodeDBPassword:   getEnv("NODE_DB_PASSWORD", ""),
+		NodeDBName:       getEnv("NODE_DB_NAME", "rubix"),
 
 		JWTPrivateKeyPath: getEnv("JWT_PRIVATE_KEY_PATH", "./keys/jwt_private.pem"),
 		JWTPublicKeyPath:  getEnv("JWT_PUBLIC_KEY_PATH", "./keys/jwt_public.pem"),

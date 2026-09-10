@@ -40,9 +40,9 @@ const (
 // debugStore is the slice of internal/database the debug handlers use.
 // It exists so handler tests can run without Postgres.
 type debugStore interface {
-	PayoutSummary(ctx context.Context, since time.Time, adminDID string) ([]database.PayoutSummaryRow, error)
+	PayoutSummary(ctx context.Context, since time.Time, adminDID, userDID string) ([]database.PayoutSummaryRow, error)
 	PayoutFailures(ctx context.Context, since time.Time, adminDID string, limit int) ([]database.FailureGroup, error)
-	PayoutHistory(ctx context.Context, adminDID, status string, since time.Time, limit int) ([]database.TransferStatus, error)
+	PayoutHistory(ctx context.Context, adminDID, userDID, status string, since time.Time, limit int) ([]database.TransferStatus, error)
 	ListAdminContracts(ctx context.Context, adminDID string) ([]database.AdminContractRow, error)
 	LatestRewardMismatch(ctx context.Context, adminDID string) (*database.TransferStatus, error)
 	LatestRewardSuccess(ctx context.Context, adminDID string) (*database.TransferStatus, error)
@@ -52,14 +52,14 @@ type debugStore interface {
 // dbDebugStore is the production debugStore: package-level database funcs.
 type dbDebugStore struct{}
 
-func (dbDebugStore) PayoutSummary(ctx context.Context, since time.Time, adminDID string) ([]database.PayoutSummaryRow, error) {
-	return database.PayoutSummary(ctx, since, adminDID)
+func (dbDebugStore) PayoutSummary(ctx context.Context, since time.Time, adminDID, userDID string) ([]database.PayoutSummaryRow, error) {
+	return database.PayoutSummary(ctx, since, adminDID, userDID)
 }
 func (dbDebugStore) PayoutFailures(ctx context.Context, since time.Time, adminDID string, limit int) ([]database.FailureGroup, error) {
 	return database.PayoutFailures(ctx, since, adminDID, limit)
 }
-func (dbDebugStore) PayoutHistory(ctx context.Context, adminDID, status string, since time.Time, limit int) ([]database.TransferStatus, error) {
-	return database.PayoutHistory(ctx, adminDID, status, since, limit)
+func (dbDebugStore) PayoutHistory(ctx context.Context, adminDID, userDID, status string, since time.Time, limit int) ([]database.TransferStatus, error) {
+	return database.PayoutHistory(ctx, adminDID, userDID, status, since, limit)
 }
 func (dbDebugStore) ListAdminContracts(ctx context.Context, adminDID string) ([]database.AdminContractRow, error) {
 	return database.ListAdminContracts(ctx, adminDID)
@@ -253,39 +253,51 @@ type debugAdminContracts struct {
 }
 
 type debugForkCheck struct {
-	AdminDID         string     `json:"admin_did"`
-	NodePort         string     `json:"node_port"`
-	Contract         string     `json:"contract"`
-	QuorumHead       string     `json:"quorum_head"`
-	OwnerExpected    string     `json:"owner_expected"`
-	OwnerCurrentHead string     `json:"owner_current_head"`
-	OwnerChainLength int        `json:"owner_chain_length"`
-	Forked           bool       `json:"forked"`
-	MismatchSeenAt   *time.Time `json:"mismatch_seen_at"`
-	MismatchRequest  string     `json:"mismatch_request_id"`
-	FirstMismatchAt  *time.Time `json:"first_mismatch_at"`
-	LastSuccessTx    string     `json:"last_success_tx"`
-	LastSuccessAt    *time.Time `json:"last_success_at"`
-	NodeError        string     `json:"node_error,omitempty"`
-	Note             string     `json:"note,omitempty"`
+	AdminDID         string `json:"admin_did"`
+	NodePort         string `json:"node_port"`
+	Contract         string `json:"contract"`
+	QuorumHead       string `json:"quorum_head"`
+	OwnerExpected    string `json:"owner_expected"`
+	OwnerCurrentHead string `json:"owner_current_head"`
+	OwnerChainLength int    `json:"owner_chain_length"`
+	// OwnerHasQuorumHead: the block the quorum committed is somewhere on
+	// the owner's chain now, i.e. the fork has been repaired.
+	OwnerHasQuorumHead bool `json:"owner_has_quorum_head"`
+	// MismatchStale: the newest mismatch is older than the newest success,
+	// so it describes a fork that has since been repaired.
+	MismatchStale   bool       `json:"mismatch_stale"`
+	Forked          bool       `json:"forked"`
+	MismatchSeenAt  *time.Time `json:"mismatch_seen_at"`
+	MismatchRequest string     `json:"mismatch_request_id"`
+	FirstMismatchAt *time.Time `json:"first_mismatch_at"`
+	LastSuccessTx   string     `json:"last_success_tx"`
+	LastSuccessAt   *time.Time `json:"last_success_at"`
+	NodeError       string     `json:"node_error,omitempty"`
+	Note            string     `json:"note,omitempty"`
+	// From the owner node's own Postgres, when NODE_DB_* is configured.
+	OwnerDBHead     string `json:"owner_db_head,omitempty"`
+	OwnerDBPosition int64  `json:"owner_db_position,omitempty"`
+	OwnerDBStatus   string `json:"owner_db_status,omitempty"`
+	OwnerDBLockRef  string `json:"owner_db_lock_ref,omitempty"`
+	OwnerDBError    string `json:"owner_db_error,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
-// GET /api/debug/payouts/summary?since=&admin_did=
+// GET /api/debug/payouts/summary?since=&admin_did=&user_did=
 func (s *Server) handleDebugPayoutSummary(c *gin.Context) {
 	since, err := parseSince(c.Query("since"), time.Now().Add(-debugDefaultWindow))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, errResponse{Error: "Validation failed", Message: err.Error()})
 		return
 	}
-	adminDID := c.Query("admin_did")
+	adminDID, userDID := c.Query("admin_did"), c.Query("user_did")
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultHandlerTimeout)
 	defer cancel()
 
-	rows, err := s.debug.PayoutSummary(ctx, since, adminDID)
+	rows, err := s.debug.PayoutSummary(ctx, since, adminDID, userDID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResponse{Error: "Query failed", Message: err.Error()})
 		return
@@ -300,8 +312,9 @@ func (s *Server) handleDebugPayoutSummary(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, okResponse{Status: true, Data: gin.H{
-		"since":  since.UTC(),
-		"admins": out,
+		"since":    since.UTC(),
+		"user_did": userDID,
+		"admins":   out,
 	}})
 }
 
@@ -337,11 +350,11 @@ func (s *Server) handleDebugPayoutFailures(c *gin.Context) {
 	}})
 }
 
-// GET /api/debug/payouts/history?admin_did=&status=&since=&limit=
+// GET /api/debug/payouts/history?admin_did=&user_did=&status=&since=&limit=
 func (s *Server) handleDebugPayoutHistory(c *gin.Context) {
-	adminDID := c.Query("admin_did")
-	if adminDID == "" {
-		c.JSON(http.StatusBadRequest, errResponse{Error: "Validation failed", Message: "admin_did is required"})
+	adminDID, userDID := c.Query("admin_did"), c.Query("user_did")
+	if adminDID == "" && userDID == "" {
+		c.JSON(http.StatusBadRequest, errResponse{Error: "Validation failed", Message: "admin_did or user_did is required"})
 		return
 	}
 	status := c.Query("status")
@@ -362,7 +375,7 @@ func (s *Server) handleDebugPayoutHistory(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), defaultHandlerTimeout)
 	defer cancel()
 
-	rows, err := s.debug.PayoutHistory(ctx, adminDID, status, since, limit)
+	rows, err := s.debug.PayoutHistory(ctx, adminDID, userDID, status, since, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, errResponse{Error: "Query failed", Message: err.Error()})
 		return
@@ -373,6 +386,7 @@ func (s *Server) handleDebugPayoutHistory(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, okResponse{Status: true, Data: gin.H{
 		"admin_did": adminDID,
+		"user_did":  userDID,
 		"status":    status,
 		"limit":     limit,
 		"count":     len(out),
@@ -495,6 +509,7 @@ func (s *Server) handleDebugForkCheck(c *gin.Context) {
 	if errors.Is(err, database.ErrNotFound) {
 		out.Note = "no chain-mismatch failures recorded for this admin"
 		s.fillOwnerHead(ctx, &out)
+		s.fillOwnerDBHead(ctx, &out)
 		c.JSON(http.StatusOK, okResponse{Status: true, Data: out})
 		return
 	}
@@ -526,31 +541,79 @@ func (s *Server) handleDebugForkCheck(c *gin.Context) {
 		return
 	}
 	out.FirstMismatchAt = utcPtr(first)
-	if first == nil && out.Note == "" {
-		out.Note = "newest mismatch predates the last success: already repaired"
-	}
+	out.MismatchStale = out.LastSuccessAt != nil && !mm.CreatedAt.After(*out.LastSuccessAt)
 
-	s.fillOwnerHead(ctx, &out)
+	chain := s.fillOwnerHead(ctx, &out)
+	s.fillOwnerDBHead(ctx, &out)
+	if out.QuorumHead != "" {
+		for _, e := range chain {
+			if e.TransactionID == out.QuorumHead {
+				out.OwnerHasQuorumHead = true
+				break
+			}
+		}
+	}
+	// Forked only when the evidence is current: the owner was reached, the
+	// mismatch is newer than the last success, and the quorum's block is
+	// not on the owner's chain.
 	if out.QuorumHead != "" && out.NodeError == "" {
-		out.Forked = out.QuorumHead != out.OwnerCurrentHead
+		out.Forked = !out.MismatchStale && !out.OwnerHasQuorumHead
+	}
+	if out.Note == "" {
+		switch {
+		case out.NodeError != "":
+			out.Note = "owner node unreachable: forked could not be evaluated"
+		case out.OwnerHasQuorumHead:
+			out.Note = "quorum's block is on the owner's chain: repaired"
+		case out.MismatchStale:
+			out.Note = "newest mismatch predates the last success: repaired, but the quorum's block is not on the owner's chain"
+		}
 	}
 	c.JSON(http.StatusOK, okResponse{Status: true, Data: out})
 }
 
-// fillOwnerHead fetches the owner's current head for out.Contract.
-func (s *Server) fillOwnerHead(ctx context.Context, out *debugForkCheck) {
+// fillOwnerDBHead adds the owner's head as recorded in its own Postgres,
+// when node database access is configured. Errors are reported in the
+// response, never as a failure.
+func (s *Server) fillOwnerDBHead(ctx context.Context, out *debugForkCheck) {
+	if s.node == nil || !s.node.Enabled() || out.Contract == "" || out.NodePort == "" {
+		return
+	}
+	states, err := s.node.ContractStates(ctx, out.NodePort, []string{out.Contract})
+	if err != nil {
+		out.OwnerDBError = err.Error()
+		return
+	}
+	st, ok := states[out.Contract]
+	if !ok {
+		out.OwnerDBError = "contract not in the node's tokens table"
+		return
+	}
+	out.OwnerDBHead = st.HeadTx
+	out.OwnerDBPosition = st.LatestPosition
+	out.OwnerDBStatus = st.StatusName
+	out.OwnerDBLockRef = st.LockReferenceID
+}
+
+// fillOwnerHead fetches the owner's chain for out.Contract, fills the
+// current head, and returns the chain (nil on error).
+func (s *Server) fillOwnerHead(ctx context.Context, out *debugForkCheck) []rubix.ChainEntry {
 	if out.Contract == "" {
 		out.NodeError = "no reward contract registered for this admin"
-		return
+		return nil
 	}
-	var dc debugContract
-	fillHead(ctx, s.fetchChain, out.AdminDID, out.Contract, &dc)
-	if dc.Error != "" {
-		out.NodeError = dc.Error
-		return
+	chain, err := s.fetchChain(ctx, out.AdminDID, out.Contract)
+	if err != nil {
+		out.NodeError = err.Error()
+		return nil
 	}
-	out.OwnerCurrentHead = dc.HeadTx
-	out.OwnerChainLength = dc.ChainLength
+	if len(chain) == 0 {
+		out.NodeError = "owner node returned an empty chain for the contract"
+		return nil
+	}
+	out.OwnerCurrentHead = chain[len(chain)-1].TransactionID
+	out.OwnerChainLength = len(chain)
+	return chain
 }
 
 func utcPtr(t *time.Time) *time.Time {

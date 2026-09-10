@@ -16,6 +16,7 @@ import (
 	"ymca-wellness-dapp/internal/auth"
 	"ymca-wellness-dapp/internal/config"
 	"ymca-wellness-dapp/internal/database"
+	"ymca-wellness-dapp/internal/nodedb"
 	"ymca-wellness-dapp/internal/queue"
 	"ymca-wellness-dapp/internal/server"
 	"ymca-wellness-dapp/internal/service"
@@ -58,7 +59,22 @@ func main() {
 	qm := queue.NewManager(svc, cfg.Env.QueueBufferSize, procTimeout)
 	qm.SetMinInterval(cfg.Env.PayoutMinInterval)
 
+	nodePools := nodedb.NewPools(nodedb.Config{
+		Host:       cfg.Env.NodeDBHost,
+		PortOffset: cfg.Env.NodeDBPortOffset,
+		User:       cfg.Env.NodeDBUser,
+		Password:   cfg.Env.NodeDBPassword,
+		DBName:     cfg.Env.NodeDBName,
+	})
+	defer nodePools.Close()
+	if nodePools.Config().Enabled() {
+		log.Printf("node db access enabled: %s:<node_port+%d> as %s", cfg.Env.NodeDBHost, cfg.Env.NodeDBPortOffset, cfg.Env.NodeDBUser)
+	} else {
+		log.Printf("node db access disabled (NODE_DB_PASSWORD unset); /api/debug/node/* will return 503")
+	}
+
 	srv := server.New(cfg, svc, qm, keys)
+	srv.UseNodeDB(nodePools)
 
 	go func() {
 		log.Printf("ymca-wellness-dapp listening on :%s (admins=%d, queue_buf=%d, payout_min_interval=%s)",

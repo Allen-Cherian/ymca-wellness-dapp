@@ -127,6 +127,19 @@ unchanged. The request stays `queued` during the wait.
 grep -q '^PAYOUT_MIN_INTERVAL_MS=' .env || echo 'PAYOUT_MIN_INTERVAL_MS=1000' >> .env
 ```
 
+Per-admin overrides go in `PAYOUT_MIN_INTERVAL_OVERRIDES` as
+`<admin_did>=<ms>` entries separated by commas. yqa runs node4's admin,
+which serves about twice the users of any other admin and has forked three
+times, at 5 seconds:
+
+```bash
+grep -q '^PAYOUT_MIN_INTERVAL_OVERRIDES=' .env || echo 'PAYOUT_MIN_INTERVAL_OVERRIDES=bafybmid3lonah2dsayt644ptecq6iiyuxmlavstpyoeb3qu6excaxwz7oq=5000' >> .env
+```
+
+A malformed entry stops the dApp at startup with a `config:` error rather
+than silently running without the override. Each override is printed at
+startup as `payout spacing override: admin=… min_interval=5s`.
+
 Default `1000`; `0` disables. Do not disable on yqa: back-to-back
 executions on one contract (about 200 ms apart under the testers' retry
 bursts) crash the owner node in `core/sync.go` and, when the crash lands

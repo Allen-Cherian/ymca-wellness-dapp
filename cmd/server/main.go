@@ -57,6 +57,10 @@ func main() {
 	procTimeout := time.Duration(cfg.Env.RubixHTTPTimeoutSecond*2) * time.Second
 	qm := queue.NewManager(svc, cfg.Env.QueueBufferSize, procTimeout)
 	qm.SetMinInterval(cfg.Env.PayoutMinInterval)
+	for did, d := range cfg.Env.PayoutMinIntervalOverrides {
+		qm.SetAdminMinInterval(did, d)
+		log.Printf("payout spacing override: admin=%s min_interval=%s", did, d)
+	}
 
 	srv := server.New(cfg, svc, qm, keys)
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +37,10 @@ type EnvConfig struct {
 	// disables spacing. See docs/INCIDENT-2026-09-04-chain-fork.md: back-
 	// to-back executions on one contract crash the owner node mid-consensus.
 	PayoutMinInterval time.Duration
+	// PayoutMinIntervalOverrides sets a different gap for specific admins,
+	// keyed by admin DID (PAYOUT_MIN_INTERVAL_OVERRIDES="<did>=<ms>,...").
+	// An admin absent from the map uses PayoutMinInterval.
+	PayoutMinIntervalOverrides map[string]time.Duration
 
 	// Bearer-token auth
 	JWTPrivateKeyPath string
@@ -99,10 +104,41 @@ func Load() (*AppConfig, error) {
 		BootstrapPassword: getEnv("BOOTSTRAP_PASSWORD", ""),
 	}
 
+	overrides, err := parseIntervalOverrides(os.Getenv("PAYOUT_MIN_INTERVAL_OVERRIDES"))
+	if err != nil {
+		return nil, fmt.Errorf("config: PAYOUT_MIN_INTERVAL_OVERRIDES: %w", err)
+	}
+	env.PayoutMinIntervalOverrides = overrides
+
 	return &AppConfig{
 		Env:        env,
 		adminByDID: make(map[string]AdminConfig),
 	}, nil
+}
+
+// parseIntervalOverrides parses "<did>=<ms>,<did>=<ms>" (":" also accepted
+// as the separator, whitespace ignored). Empty input yields an empty map.
+// A malformed entry is an error so a typo cannot silently drop a
+// protection.
+func parseIntervalOverrides(raw string) (map[string]time.Duration, error) {
+	out := make(map[string]time.Duration)
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		sep := strings.LastIndexAny(entry, "=:")
+		if sep <= 0 || sep == len(entry)-1 {
+			return nil, fmt.Errorf("entry %q must be <admin_did>=<milliseconds>", entry)
+		}
+		did := strings.TrimSpace(entry[:sep])
+		ms, err := strconv.Atoi(strings.TrimSpace(entry[sep+1:]))
+		if err != nil || ms < 0 {
+			return nil, fmt.Errorf("entry %q: milliseconds must be a non-negative integer", entry)
+		}
+		out[did] = time.Duration(ms) * time.Millisecond
+	}
+	return out, nil
 }
 
 // ReloadAdmins refreshes the in-memory admin map from the database. Call

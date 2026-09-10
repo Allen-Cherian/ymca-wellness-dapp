@@ -247,3 +247,60 @@ func TestSetMinIntervalClampsNegative(t *testing.T) {
 		t.Fatalf("MinInterval = %s, want 0", got)
 	}
 }
+
+// TestPerAdminOverride: adminA has a 5s override, adminB uses the 1s
+// default, adminC is set to 0. Each admin's second job is spaced by its
+// own interval only.
+func TestPerAdminOverride(t *testing.T) {
+	clock := &fakeClock{t: time.Unix(1_000_000, 0)}
+	m := newTestManager(t, clock, time.Second)
+	m.SetAdminMinInterval("adminA", 5*time.Second)
+	m.SetAdminMinInterval("adminC", 0)
+	m.SetAdminMinInterval("adminD", -time.Second)
+	if m.IntervalFor("adminA") != 5*time.Second || m.IntervalFor("adminB") != time.Second ||
+		m.IntervalFor("adminC") != 0 || m.IntervalFor("adminD") != 0 {
+		t.Fatalf("IntervalFor: A=%s B=%s C=%s D=%s", m.IntervalFor("adminA"), m.IntervalFor("adminB"), m.IntervalFor("adminC"), m.IntervalFor("adminD"))
+	}
+
+	var (
+		mu     sync.Mutex
+		sleeps = map[string][]time.Duration{}
+		wg     sync.WaitGroup
+	)
+	// Attribute each sleep to the admin whose worker is about to run.
+	var current string
+	m.sleep = func(d time.Duration) {
+		mu.Lock()
+		sleeps[current] = append(sleeps[current], d)
+		mu.Unlock()
+		clock.sleep(d)
+	}
+	m.run = func(j *TransferJob) { defer wg.Done() }
+
+	// Run admins one at a time so the shared `current` label is exact.
+	for _, admin := range []string{"adminA", "adminB", "adminC"} {
+		mu.Lock()
+		current = admin
+		mu.Unlock()
+		wg.Add(2)
+		if err := m.Enqueue(job(admin, admin+"-1")); err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Enqueue(job(admin, admin+"-2")); err != nil {
+			t.Fatal(err)
+		}
+		waitOrFail(t, &wg, admin)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if got := sleeps["adminA"]; len(got) != 1 || got[0] != 5*time.Second {
+		t.Errorf("adminA sleeps = %v, want [5s]", got)
+	}
+	if got := sleeps["adminB"]; len(got) != 1 || got[0] != time.Second {
+		t.Errorf("adminB sleeps = %v, want [1s]", got)
+	}
+	if got := sleeps["adminC"]; len(got) != 0 {
+		t.Errorf("adminC sleeps = %v, want none", got)
+	}
+}

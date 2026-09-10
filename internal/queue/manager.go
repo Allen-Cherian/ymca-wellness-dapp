@@ -52,6 +52,9 @@ type Manager struct {
 	// minInterval is the minimum gap between the end of one job and the
 	// start of the next for the same admin. Zero disables spacing.
 	minInterval time.Duration
+	// adminInterval overrides minInterval for specific admins
+	// (PAYOUT_MIN_INTERVAL_OVERRIDES). Written before workers start.
+	adminInterval map[string]time.Duration
 
 	// run executes one job. Defaults to processOne; tests replace it.
 	run func(*TransferJob)
@@ -75,12 +78,13 @@ func NewManager(svc *service.Service, bufferSize int, procTimeout time.Duration)
 		procTimeout = 5 * time.Minute
 	}
 	m := &Manager{
-		svc:         svc,
-		bufferSize:  bufferSize,
-		procTimeout: procTimeout,
-		now:         time.Now,
-		sleep:       time.Sleep,
-		queues:      make(map[string]*adminQueue),
+		svc:           svc,
+		bufferSize:    bufferSize,
+		procTimeout:   procTimeout,
+		now:           time.Now,
+		sleep:         time.Sleep,
+		adminInterval: make(map[string]time.Duration),
+		queues:        make(map[string]*adminQueue),
 	}
 	m.run = m.processOne
 	return m
@@ -96,8 +100,25 @@ func (m *Manager) SetMinInterval(d time.Duration) {
 	m.minInterval = d
 }
 
-// MinInterval returns the configured per-admin spacing.
+// MinInterval returns the default per-admin spacing.
 func (m *Manager) MinInterval() time.Duration { return m.minInterval }
+
+// SetAdminMinInterval overrides the spacing for one admin. Negative
+// values are treated as zero. Call before the first Enqueue.
+func (m *Manager) SetAdminMinInterval(adminDID string, d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	m.adminInterval[adminDID] = d
+}
+
+// IntervalFor returns the spacing in effect for an admin.
+func (m *Manager) IntervalFor(adminDID string) time.Duration {
+	if d, ok := m.adminInterval[adminDID]; ok {
+		return d
+	}
+	return m.minInterval
+}
 
 // Enqueue submits a job for the admin. Non-blocking: returns ErrQueueFull
 // if the buffer is saturated.
@@ -158,7 +179,7 @@ func (m *Manager) getOrCreate(adminDID string) *adminQueue {
 // finished; the wait happens here, in this admin's goroutine only, so
 // other admins' workers are unaffected and FIFO order is preserved.
 func (m *Manager) worker(q *adminQueue) {
-	log.Printf("queue[%s]: worker started (buffer=%d, min_interval=%s)", q.adminDID, m.bufferSize, m.minInterval)
+	log.Printf("queue[%s]: worker started (buffer=%d, min_interval=%s)", q.adminDID, m.bufferSize, m.IntervalFor(q.adminDID))
 	for job := range q.ch {
 		m.waitForSpacing(q)
 		m.run(job)
@@ -166,13 +187,14 @@ func (m *Manager) worker(q *adminQueue) {
 	}
 }
 
-// waitForSpacing sleeps for whatever remains of minInterval since the
-// admin's last job finished. No-op for the first job or when disabled.
+// waitForSpacing sleeps for whatever remains of the admin's interval
+// since its last job finished. No-op for the first job or when disabled.
 func (m *Manager) waitForSpacing(q *adminQueue) {
-	if m.minInterval <= 0 || q.lastDone.IsZero() {
+	interval := m.IntervalFor(q.adminDID)
+	if interval <= 0 || q.lastDone.IsZero() {
 		return
 	}
-	if remaining := m.minInterval - m.now().Sub(q.lastDone); remaining > 0 {
+	if remaining := interval - m.now().Sub(q.lastDone); remaining > 0 {
 		m.sleep(remaining)
 	}
 }

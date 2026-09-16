@@ -190,6 +190,11 @@ smart contracts are released when the node starts) at about 06:35 UTC on 8 Sep; 
 restarts released all locks, which is when the three forked nodes began reporting the
 mismatch. That build does NOT yet contain the sync-panic guard.
 
+*Correction, 16 Sep:* the image that was actually running on 8–16 Sep
+(`rubix-node:branch-allen-fix-nft-lock-release`, created 7 Sep 10:50 UTC) predates the
+sweep commit `aa387f19` (8 Sep 06:24 UTC) and never logged `STARTUP_LOCK_SWEEP`. The
+8 Sep locks were released by the manual UPDATEs, not by the build. See the 16 Sep section.
+
 Also checked on 8 Sep before reopening: nodes 2, 4, 7, 8 had panicked again that morning
 (3, 2, 3, 1 times) but their owner heads equalled their quorum heads (3953, 4220, 4278,
 3579), so those crashes fell outside consensus and nothing forked. nginx reopened at
@@ -268,3 +273,125 @@ owner vs quorum heads and repeat sections 2–3 for that node.
 - `docker exec … psql` with a heredoc needs `\$\$` for PL/pgSQL blocks.
 - Quorum-VM nodeN is the quorum for yqa nodeN. The quorum keeps its copy of the owner's
   contract chain in its own `tokenchain`, not in the `fullnode_*` tables.
+
+## 9 Sep fork (repaired 10 Sep) and the 11–16 Sep lock outage (repaired 16 Sep 2026)
+
+### 9 Sep: node4 forks without a panic
+
+Last node4 success 2026-09-09 14:48:22 UTC. The owner's consensus POST through the libp2p
+tunnel (`http://127.0.0.1:22011/rubix/v1/internal/initiate_consensus`) returned EOF about
+15 ms after the quorum had committed block 14490 (`3c0ddd12d3e7…`). The PeerManager
+retried the same request one second later and the quorum rejected the retry as a chain
+mismatch: lost reply plus a non-idempotent retry, no owner panic. Chain-mismatch failures
+from 23:18:16 UTC, 5,016 of them by 05:15 on 10 Sep; every other node stayed healthy.
+`PAYOUT_MIN_INTERVAL_MS=1000` was in effect and did not prevent it.
+
+Repaired 10 Sep ~06:32 UTC with `fork-repair.sh auto` (nginx stopped ~06:25, reopened
+~06:35). Backup `/datadrive/fork-repair/backup-node4-rubix-20260910-0632.sql`.
+
+| Node | Lost transaction | Replayed at | dApp request flipped | Verified by |
+|---|---|---|---|---|
+| node4 | 3c0ddd12d3e7… | 14490 | 78f5ab51-dbd3-46d6-9985-796494827de5 (1 pt, user bafybmigevnh455…, activity 24) | a1c83477… → 31db0cfdd03f… @14491 |
+
+Quorum pledges released on the verification payout. Do-not-retry addition: `78f5ab51-dbd3…`.
+
+### 10–13 Sep: seven contracts left locked, three of them also forked
+
+The fleet ran on the unpatched image from 10 Sep 06:35. Node4 alone panicked 16 times
+between 10 Sep 15:33 and 11 Sep 00:28 UTC, always `core/sync.go:548` in the self-echo
+sync that follows every execution (`SyncTransactionChainsFromPeer` from the node's own
+DID). Each crash cost ~16 s of `connection reset by peer` / `EOF` failures on the dApp
+(228 + 9 on node4). The last one, at 00:28:24.077, landed 85 ms after request
+`CB216F3B-FC3A-4F2C-A711-9F2A6952B0EB` had locked the reward contract and before
+"Initiating consensus with quorum":
+
+```
+00:28:23.992 BuildTransactionInfoFromRequest: SC locked for execution: scID=QmSDKA… prevTxID=8ee7b8
+00:28:24.077 panic: runtime error: slice bounds out of range [23182:23181]
+00:28:41.178 BuildTransactionInfoFromRequest: SC lock failed: QueryAndLockForExecution(smart_contract):
+             tokens not found or not in executable status (Deployed/Executed, or Free for NFT)
+```
+
+The quorum never saw the request, so the chain did not fork (owner head 8ee7b8dd… at
+23181 = quorum head). The lock stayed because (a) since `68b06fdd` the failure path
+releases NFT/SC locks *by lock reference*, so later requests correctly refuse to touch a
+lock they do not own, and (b) the running image has no startup sweep, so Docker's restart
+of the container at 00:28:24 changed nothing. From 00:28:18 every node4 payout failed at
+the **post** step (`SC lock failed … not in executable status`, 58,310 rows by 16 Sep
+05:38), not at the sign step, which is why `fork-check` reported "already repaired".
+
+The same crash-inside-the-lock-window hit the other nodes one by one:
+
+| Node | Last success (UTC) | Lock reference | Also forked? |
+|---|---|---|---|
+| node5 | 10 Sep 16:58 | – (never locked) | yes, lost tx `71db222f7fe1…` @16695, 31,253 mismatch failures |
+| node4 | 11 Sep 00:28 | CB216F3B-… | no |
+| node7 | 11 Sep 15:03 | A229C63F-… | no |
+| node2 | 12 Sep 12:18 | 51736FC9-… | no |
+| node8 | 12 Sep 15:23 | 9B308F52-… | no |
+| node3 | 13 Sep 04:58 | 90875CDF-… | yes, lost tx `7f082fc38f27…` @32265 |
+| node9 | 13 Sep 04:58 | 0EB87FED-… | no |
+| node10 | 13 Sep 04:58 | 29EFEE41-… | yes, lost tx `a026f8cb313d…` @32711 |
+
+From 13 Sep 05:00 UTC no admin had a single success. **A lock hides a fork**: a locked
+contract fails before the sign step, so no chain-mismatch row is ever written, and
+`fork-repair.sh detect` (which keys on the newest mismatch row) reports such a node as
+healthy. Node3 and node10 were found only by comparing quorum heads with owner heads.
+
+### 16 Sep: repair
+
+All times UTC. Investigation from 05:35 through the debug API (`payouts/summary`,
+`failures`, `history`, `fork-check`, `contracts`) plus the node4 tokens row and log.
+
+1. 07:32–07:36: Allen upgraded all ten yqa nodes to a build that has the startup sweep
+   (`STARTUP_LOCK_SWEEP: done: released=1` logged on nodes 2, 3, 4, 7, 8, 9, 10; 0 on the
+   rest). All seven locks were gone without any UPDATE. The quorum VM was **not** upgraded;
+   its ten nodes have never panicked (all-time count 0) and stayed up.
+2. ~07:45: nginx stopped. dApp binary swapped to the `58a58ad` build (`ymca-dapp.new`,
+   built 10 Sep 06:30; the 8 Sep binary had been running until then, so the per-admin
+   override was never live). `.env`: `PAYOUT_MIN_INTERVAL_MS=5000` (all admins), override
+   for node4's admin kept at 5000. dApp restarted 07:54:12, startup lines confirmed.
+3. Audit (`morning-check.sh`, tokens rows on all ten nodes, quorum heads on the quorum
+   VM): every contract 11/3 with no lock, every chain internally consistent, and quorum
+   heads one ahead on node3 (32265), node5 (16695), node10 (32711). Each lost block's
+   `previousTransactionID` equalled the owner's head.
+4. `forks.txt` written by hand on the quorum VM from the quorum heads; `export` there
+   (3 rows, `hash_ok=True`); `apply --dry-run` then `apply` at 08:20 on yqa. Backups
+   `/datadrive/fork-repair/backup-node{3,5,10}-rubix-20260916-0820.sql`.
+
+| Node | Lost transaction | Replayed at | dApp request flipped | Verified by |
+|---|---|---|---|---|
+| node3 | 7f082fc38f272627bd38f555c764760d09fd2ff5b513ba8810be2eb60d5bfa0e | 32265 | 9b25c93b-5277-430d-a881-cd53f467e4a9 (1 pt, activity 34) | bce4349f… → c4eb5706b611… @32266 |
+| node5 | 71db222f7fe1b02ce91792b3439f403c42c1f6515fa969594978ccbd558c6fcc | 16695 | fc694f84-ed07-4228-adcf-0362511c34eb (3 pts, activities 11, 12, 34) | a700df38… → 1c58cf27e9c7… @16696 |
+| node10 | a026f8cb313d385a9871364addf50a079b3b3d01247fdb19580b32d4f88e3953 | 32711 | 7c00c504-42e1-4710-9a72-856c932a9a58 (1 pt, activity 26) | fdd2ce45… → 70d387a85c77… @32712 |
+
+5. `pledges` on the quorum VM: pending unpledge rows 0 for all three, quorum heads
+   advanced to the verification blocks.
+6. One payout through every admin (`WORK=/tmp/verify-all fork-repair.sh verify` with a
+   forks.txt listing 1:x … 10:x): ten successes, node4 = `41ed906a…` → `2cc8c7258067…`
+   @23182.
+7. 08:29:29: nginx started.
+
+Do-not-retry additions for the testers (users already credited by the replayed blocks):
+`9b25c93b-5277…` (node3), `fc694f84-ed07…` (node5), `7c00c504-42e1…` (node10).
+
+### Lessons
+
+- Classify by the failing step first: `sign:` + chain mismatch = fork; `post tx:` +
+  `SC lock failed … not in executable status` = lock (tokens.token_status=1);
+  `connection refused/reset/EOF` = the node process was down at that moment.
+- A lock can hide a fork. After any lock release, compare quorum head vs owner head for
+  that node before reopening (`SELECT left(token_id,10),max(position) FROM tokenchain
+  WHERE token_id LIKE 'Qm%' GROUP BY 1 ORDER BY 2 DESC LIMIT 1` on the quorum VM's
+  nodeN-postgres). `detect` cannot see these; write forks.txt by hand from the quorum
+  heads and let the export's `prev=` and the apply guards check it.
+- `fork-check`'s `forked` flag compares the quorum head parsed from the *newest mismatch
+  row* with the live owner head, so it reads `true` on a repaired node whose chain has
+  since grown; trust the `note` ("newest mismatch predates the last success") over the flag.
+- `morning-check.sh` counts `Starting Rubix node` lines as panics, so every deliberate
+  restart shows as 1.
+- Check that a binary really contains a fix before relying on it: `docker exec nodeN-node
+  sh -c 'for p in /proc/[0-9]*/exe; do grep -q STARTUP_LOCK_SWEEP $p 2>/dev/null && echo
+  has-sweep; done'`, or look for the sweep line after a start.
+- The quorum VM still runs the 3-week-old image. It has never panicked, but it runs the
+  same sync callback; upgrade it at the next quiet slot.

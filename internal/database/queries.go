@@ -403,3 +403,193 @@ func SumRewardPointsForActivities(ctx context.Context, adminDID string, activity
 	}
 	return sum, nil
 }
+
+// ---------------------------------------------------------------------------
+// Operator diagnostics (GET /api/debug/*). Read-only. These are the psql
+// queries used during docs/INCIDENT-2026-09-04-chain-fork.md, turned into
+// helpers so the next incident does not need a shell on the VM.
+// ---------------------------------------------------------------------------
+
+// mismatchNeedle is the substring in error_details that identifies a
+// quorum/owner chain fork (TokenChainIntigrityCheck on the quorum).
+const mismatchNeedle = "%chain mismatch%"
+
+// PayoutSummaryRow is one admin's reward-transfer counts in a window.
+type PayoutSummaryRow struct {
+	AdminDID        string
+	NodePort        string
+	Total           int
+	Success         int
+	Failed          int
+	Mismatch        int // failed rows whose error_details mention "chain mismatch"
+	InFlight        int // queued + processing
+	FirstMismatchAt *time.Time
+	LastMismatchAt  *time.Time
+	LastSuccessAt   *time.Time
+	LastSuccessTx   string
+}
+
+// PayoutSummary aggregates reward transfers created at or after since,
+// per admin, joined with admins for node_port. adminDID narrows to one
+// admin when non-empty. Admins with no rows in the window are omitted.
+func PayoutSummary(ctx context.Context, since time.Time, adminDID string) ([]PayoutSummaryRow, error) {
+	q := `
+		SELECT ts.admin_did, COALESCE(a.node_port, ''),
+		       count(*),
+		       count(*) FILTER (WHERE ts.status = 'success'),
+		       count(*) FILTER (WHERE ts.status = 'failed'),
+		       count(*) FILTER (WHERE ts.status = 'failed' AND ts.error_details LIKE $2),
+		       count(*) FILTER (WHERE ts.status IN ('queued', 'processing')),
+		       min(ts.created_at) FILTER (WHERE ts.status = 'failed' AND ts.error_details LIKE $2),
+		       max(ts.created_at) FILTER (WHERE ts.status = 'failed' AND ts.error_details LIKE $2),
+		       max(ts.created_at) FILTER (WHERE ts.status = 'success'),
+		       COALESCE((SELECT t2.transaction_id FROM transfer_status t2
+		                 WHERE t2.admin_did = ts.admin_did AND t2.kind = 'reward' AND t2.status = 'success'
+		                 ORDER BY t2.created_at DESC LIMIT 1), '')
+		FROM transfer_status ts
+		LEFT JOIN admins a ON a.did = ts.admin_did
+		WHERE ts.kind = 'reward' AND ts.created_at >= $1
+		  AND ($3 = '' OR ts.admin_did = $3)
+		GROUP BY ts.admin_did, a.node_port
+		ORDER BY a.node_port NULLS LAST, ts.admin_did`
+	rows, err := Pool.Query(ctx, q, since, mismatchNeedle, adminDID)
+	if err != nil {
+		return nil, fmt.Errorf("PayoutSummary: %w", err)
+	}
+	defer rows.Close()
+	var out []PayoutSummaryRow
+	for rows.Next() {
+		var r PayoutSummaryRow
+		if err := rows.Scan(&r.AdminDID, &r.NodePort, &r.Total, &r.Success, &r.Failed, &r.Mismatch,
+			&r.InFlight, &r.FirstMismatchAt, &r.LastMismatchAt, &r.LastSuccessAt, &r.LastSuccessTx); err != nil {
+			return nil, fmt.Errorf("PayoutSummary scan: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// FailureGroup is one normalised failure reason and how often it occurred.
+type FailureGroup struct {
+	Count    int
+	Reason   string // error_details with hashes/DIDs/ports replaced by '#'
+	FirstAt  time.Time
+	LatestAt time.Time
+}
+
+// failureReasonExpr normalises error_details before grouping: 64-hex
+// transaction/contract ids, bafybmi… DIDs and 127.0.0.1:<port> become '#'.
+// Same expression as scripts/incident-2026-09-04/morning-check.sh.
+const failureReasonExpr = `left(regexp_replace(error_details, '[0-9a-f]{64}|bafybmi[a-z0-9]+|127\.0\.0\.1:[0-9]+', '#', 'g'), 200)`
+
+// PayoutFailures groups failed reward transfers created at or after
+// since by normalised reason, most frequent first. adminDID narrows to
+// one admin when non-empty.
+func PayoutFailures(ctx context.Context, since time.Time, adminDID string, limit int) ([]FailureGroup, error) {
+	q := `
+		SELECT count(*), ` + failureReasonExpr + ` AS reason, min(created_at), max(created_at)
+		FROM transfer_status
+		WHERE kind = 'reward' AND status = 'failed' AND created_at >= $1
+		  AND ($2 = '' OR admin_did = $2)
+		GROUP BY reason
+		ORDER BY count(*) DESC, max(created_at) DESC
+		LIMIT $3`
+	rows, err := Pool.Query(ctx, q, since, adminDID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("PayoutFailures: %w", err)
+	}
+	defer rows.Close()
+	var out []FailureGroup
+	for rows.Next() {
+		var g FailureGroup
+		if err := rows.Scan(&g.Count, &g.Reason, &g.FirstAt, &g.LatestAt); err != nil {
+			return nil, fmt.Errorf("PayoutFailures scan: %w", err)
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
+}
+
+// PayoutHistory returns one admin's reward transfers, newest first, with
+// every column. status filters when non-empty; since filters when
+// non-zero.
+func PayoutHistory(ctx context.Context, adminDID, status string, since time.Time, limit int) ([]TransferStatus, error) {
+	where := "admin_did = $1 AND kind = $2"
+	args := []any{adminDID, KindReward}
+	if status != "" {
+		args = append(args, status)
+		where += fmt.Sprintf(" AND status = $%d", len(args))
+	}
+	if !since.IsZero() {
+		args = append(args, since)
+		where += fmt.Sprintf(" AND created_at >= $%d", len(args))
+	}
+	args = append(args, limit)
+	where += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d", len(args))
+	return listTransferStatus(ctx, where, args...)
+}
+
+// AdminContractRow is admin_contracts joined with admins.node_port.
+type AdminContractRow struct {
+	AdminDID     string
+	NodePort     string
+	ContractKind string
+	ContractHash string
+	DeployedAt   time.Time
+}
+
+// ListAdminContracts returns every registered contract with its owner's
+// node port, ordered by node port then kind. adminDID narrows to one
+// admin when non-empty.
+func ListAdminContracts(ctx context.Context, adminDID string) ([]AdminContractRow, error) {
+	rows, err := Pool.Query(ctx, `
+		SELECT ac.admin_did, COALESCE(a.node_port, ''), ac.contract_kind, ac.contract_hash, ac.deployed_at
+		FROM admin_contracts ac
+		LEFT JOIN admins a ON a.did = ac.admin_did
+		WHERE ($1 = '' OR ac.admin_did = $1)
+		ORDER BY a.node_port NULLS LAST, ac.admin_did, ac.contract_kind`, adminDID)
+	if err != nil {
+		return nil, fmt.Errorf("ListAdminContracts: %w", err)
+	}
+	defer rows.Close()
+	var out []AdminContractRow
+	for rows.Next() {
+		var r AdminContractRow
+		if err := rows.Scan(&r.AdminDID, &r.NodePort, &r.ContractKind, &r.ContractHash, &r.DeployedAt); err != nil {
+			return nil, fmt.Errorf("ListAdminContracts scan: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// LatestRewardMismatch returns the newest failed reward transfer for the
+// admin whose error_details mention "chain mismatch", or ErrNotFound.
+func LatestRewardMismatch(ctx context.Context, adminDID string) (*TransferStatus, error) {
+	return selectTransferStatus(ctx,
+		"admin_did = $1 AND kind = $2 AND status = $3 AND error_details LIKE $4 ORDER BY created_at DESC LIMIT 1",
+		adminDID, KindReward, StatusFailed, mismatchNeedle)
+}
+
+// LatestRewardSuccess returns the admin's newest successful reward
+// transfer, or ErrNotFound.
+func LatestRewardSuccess(ctx context.Context, adminDID string) (*TransferStatus, error) {
+	return selectTransferStatus(ctx,
+		"admin_did = $1 AND kind = $2 AND status = $3 ORDER BY created_at DESC LIMIT 1",
+		adminDID, KindReward, StatusSuccess)
+}
+
+// FirstRewardMismatchAfter returns the created_at of the admin's oldest
+// "chain mismatch" failure created after t (all of them when t is zero),
+// or nil when there is none.
+func FirstRewardMismatchAfter(ctx context.Context, adminDID string, t time.Time) (*time.Time, error) {
+	var first *time.Time
+	err := Pool.QueryRow(ctx, `
+		SELECT min(created_at) FROM transfer_status
+		WHERE admin_did = $1 AND kind = $2 AND status = $3 AND error_details LIKE $4 AND created_at > $5`,
+		adminDID, KindReward, StatusFailed, mismatchNeedle, t).Scan(&first)
+	if err != nil {
+		return nil, fmt.Errorf("FirstRewardMismatchAfter: %w", err)
+	}
+	return first, nil
+}

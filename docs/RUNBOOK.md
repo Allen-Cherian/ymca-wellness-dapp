@@ -114,6 +114,39 @@ The bootstrap operator is seeded **only on a boot where `auth_users` is
 empty**. Set these before the first start or you will have to insert the
 row by hand.
 
+### 5a. Payout spacing (`PAYOUT_MIN_INTERVAL_MS`)
+
+The dApp enforces a minimum gap between consecutive reward executions for
+the **same admin**: after one transfer finishes (success or failure) the
+admin's worker waits until at least this many milliseconds have passed
+before starting the next queued request for that admin. Different admins
+are never delayed relative to each other, and FIFO order within an admin is
+unchanged. The request stays `queued` during the wait.
+
+```bash
+grep -q '^PAYOUT_MIN_INTERVAL_MS=' .env || echo 'PAYOUT_MIN_INTERVAL_MS=1000' >> .env
+```
+
+Per-admin overrides go in `PAYOUT_MIN_INTERVAL_OVERRIDES` as
+`<admin_did>=<ms>` entries separated by commas. yqa runs node4's admin,
+which serves about twice the users of any other admin and has forked three
+times, at 5 seconds:
+
+```bash
+grep -q '^PAYOUT_MIN_INTERVAL_OVERRIDES=' .env || echo 'PAYOUT_MIN_INTERVAL_OVERRIDES=bafybmid3lonah2dsayt644ptecq6iiyuxmlavstpyoeb3qu6excaxwz7oq=5000' >> .env
+```
+
+A malformed entry stops the dApp at startup with a `config:` error rather
+than silently running without the override. Each override is printed at
+startup as `payout spacing override: admin=… min_interval=5s`.
+
+Default `1000`; `0` disables. Do not disable on yqa: back-to-back
+executions on one contract (about 200 ms apart under the testers' retry
+bursts) crash the owner node in `core/sync.go` and, when the crash lands
+inside consensus, fork the contract chain. Full analysis and repair
+procedure in `docs/INCIDENT-2026-09-04-chain-fork.md`. The value in effect
+is printed on the startup line (`payout_min_interval=1s`).
+
 ### 6. Register the admin DIDs
 
 The ten node DIDs live in `/datadrive/rubix-docker/did_results.json`.

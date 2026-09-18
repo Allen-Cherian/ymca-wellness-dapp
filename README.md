@@ -577,6 +577,8 @@ There is no `config.toml`.
 | `FT_NAME` | `ytoken` | FT name minted by each admin and used in reward transfers |
 | `RUBIX_HTTP_TIMEOUT_SECONDS` | `120` | Per-request timeout to Rubix |
 | `QUEUE_BUFFER_SIZE` | `1000` | Per-admin channel capacity |
+| `PAYOUT_MIN_INTERVAL_MS` | `1000` | Minimum gap between consecutive reward executions for the same admin; `0` disables |
+| `PAYOUT_MIN_INTERVAL_OVERRIDES` | empty | Per-admin gaps, `<admin_did>=<ms>,...`; unlisted admins use the default |
 
 Admins (DID, password, node port) are **not** in env — they live in the
 `admins` table, populated by `/api/admins/setup`.

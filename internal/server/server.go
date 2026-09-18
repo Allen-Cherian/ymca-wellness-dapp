@@ -22,6 +22,12 @@ type Server struct {
 	Queue  *queue.Manager
 	Keys   *auth.Keys
 	Engine *gin.Engine
+
+	// debug and fetchChain back the read-only /api/debug/* handlers;
+	// defaults are the database package and the admin's node, tests
+	// substitute fakes.
+	debug      debugStore
+	fetchChain chainFetcher
 }
 
 // New builds a configured *Server.
@@ -37,7 +43,8 @@ func New(cfg *config.AppConfig, svc *service.Service, qm *queue.Manager, keys *a
 		AllowCredentials: false,
 	}))
 
-	s := &Server{Cfg: cfg, Svc: svc, Queue: qm, Keys: keys, Engine: r}
+	s := &Server{Cfg: cfg, Svc: svc, Queue: qm, Keys: keys, Engine: r, debug: dbDebugStore{}}
+	s.fetchChain = s.fetchChainFromNode
 	s.registerRoutes()
 	return s
 }
@@ -105,6 +112,13 @@ func (s *Server) registerRoutes() {
 
 		// Admin provisioning
 		api.POST("/admins/setup", s.handleSetupAdmins)
+
+		// Operator diagnostics (read-only). See docs/debug-api.md.
+		api.GET("/debug/payouts/summary", s.handleDebugPayoutSummary)
+		api.GET("/debug/payouts/failures", s.handleDebugPayoutFailures)
+		api.GET("/debug/payouts/history", s.handleDebugPayoutHistory)
+		api.GET("/debug/contracts", s.handleDebugContracts)
+		api.GET("/debug/fork-check", s.handleDebugForkCheck)
 	}
 
 	// v1 client-contract aliases. Same handlers under different paths /
